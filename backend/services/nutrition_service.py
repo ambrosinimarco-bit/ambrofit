@@ -1,0 +1,102 @@
+from datetime import date
+from backend.database.client import get_supabase
+
+
+def calculate_bmr(weight_kg: float, height_cm: float, age: int, sex: str = "male") -> int:
+    """Mifflin-St Jeor BMR formula."""
+    bmr = 10 * weight_kg + 6.25 * height_cm - 5 * age
+    return round(bmr + 5 if sex == "male" else bmr - 161)
+
+
+def get_daily_summary(user_id: str, target_date: date) -> dict:
+    db = get_supabase()
+    date_str = target_date.isoformat()
+
+    meals = db.table("meals").select("*").eq("user_id", user_id).eq("meal_date", date_str).execute()
+    activities = db.table("activities").select("*").eq("user_id", user_id).eq("activity_date", date_str).execute()
+    try:
+        health_result = db.table("daily_health").select("*").eq("user_id", user_id).eq("health_date", date_str).limit(1).execute()
+    except Exception:
+        health_cols = "id,user_id,health_date,weight_kg,sleep_hours,steps,body_battery,hrv_ms,stress_score,resting_hr,notes,created_at"
+        health_result = db.table("daily_health").select(health_cols).eq("user_id", user_id).eq("health_date", date_str).limit(1).execute()
+    user_result = db.table("user_profiles").select("*").eq("id", user_id).limit(1).execute()
+
+    meal_list = meals.data or []
+    activity_list = activities.data or []
+    health_data = (health_result.data or [{}])[0]
+    user_data = (user_result.data or [{}])[0]
+
+    calories_in = sum(m.get("calories", 0) for m in meal_list)
+    protein = sum(m.get("protein_g", 0) for m in meal_list)
+    carbs = sum(m.get("carbs_g", 0) for m in meal_list)
+    fat = sum(m.get("fat_g", 0) for m in meal_list)
+    fiber = sum(m.get("fiber_g", 0) for m in meal_list)
+    activities_calories = sum(a.get("calories", 0) or 0 for a in activity_list)
+
+    # BMR (Mifflin-St Jeor) — richiede peso, altezza, età dal profilo
+    weight = health_data.get("weight_kg") or user_data.get("weight_kg")
+    height = user_data.get("height_cm")
+    age = user_data.get("age")
+    bmr = calculate_bmr(weight, height, age) if (weight and height and age) else None
+
+    # Calorie bruciate: usa iPhone Fitness se disponibile, altrimenti BMR + attività
+    total_calories_iphone = health_data.get("total_calories_iphone")
+    if total_calories_iphone:
+        calories_out = total_calories_iphone
+    elif bmr:
+        calories_out = bmr + activities_calories
+    else:
+        calories_out = activities_calories
+
+    calorie_goal = user_data.get("daily_calorie_goal", 2400)
+    protein_goal = user_data.get("protein_goal_g", 150)
+    carbs_goal = user_data.get("carbs_goal_g", 280)
+    fat_goal = user_data.get("fat_goal_g", 75)
+
+    return {
+        "date": date_str,
+        "calories_in": round(calories_in, 1),
+        "calories_out": round(calories_out, 1),
+        "activities_calories": round(activities_calories, 1),
+        "bmr": bmr,
+        "total_calories_iphone": total_calories_iphone,
+        "net_calories": round(calories_in - calories_out, 1),
+        "calorie_goal": calorie_goal,
+        "calorie_balance": round(calories_in - calorie_goal, 1),
+        "protein_g": round(protein, 1),
+        "carbs_g": round(carbs, 1),
+        "fat_g": round(fat, 1),
+        "fiber_g": round(fiber, 1),
+        "protein_goal_g": protein_goal,
+        "carbs_goal_g": carbs_goal,
+        "fat_goal_g": fat_goal,
+        "weight_kg": health_data.get("weight_kg"),
+        "steps": health_data.get("steps"),
+        "sleep_hours": health_data.get("sleep_hours"),
+        "body_battery": health_data.get("body_battery"),
+        "hrv_ms": health_data.get("hrv_ms"),
+        "stress_score": health_data.get("stress_score"),
+        "meals": meal_list,
+        "activities": activity_list,
+    }
+
+
+def get_weekly_summary(user_id: str, week_start: date) -> list[dict]:
+    from datetime import timedelta
+    return [get_daily_summary(user_id, week_start + timedelta(days=i)) for i in range(7)]
+
+
+def get_weight_trend(user_id: str, days: int = 30) -> list[dict]:
+    from datetime import timedelta
+    db = get_supabase()
+    since = (date.today() - timedelta(days=days)).isoformat()
+
+    result = db.table("daily_health")\
+        .select("health_date,weight_kg")\
+        .eq("user_id", user_id)\
+        .gte("health_date", since)\
+        .not_.is_("weight_kg", "null")\
+        .order("health_date")\
+        .execute()
+
+    return result.data or []

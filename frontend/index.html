@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fitness Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+      <div class="sidebar-logo">
+        <span class="logo-icon">🏋️</span>
+        <span class="logo-text">FitTracker</span>
+      </div>
+      <ul class="nav-links">
+        <li><a href="#" class="nav-item active" data-tab="overview"><span>📊</span> Panoramica</a></li>
+        <li><a href="#" class="nav-item" data-tab="nutrition"><span>🍽</span> Nutrizione</a></li>
+        <li><a href="#" class="nav-item" data-tab="activities"><span>🏃</span> Attività</a></li>
+        <li><a href="#" class="nav-item" data-tab="training"><span>📅</span> Piano</a></li>
+        <li><a href="#" class="nav-item" data-tab="health"><span>❤️</span> Salute</a></li>
+        <li><a href="#" class="nav-item" data-tab="goals"><span>🎯</span> Obiettivi</a></li>
+        <li><a href="#" class="nav-item" data-tab="settings"><span>⚙️</span> Impostazioni</a></li>
+      </ul>
+      <div class="sidebar-user" id="sidebarUser"></div>
+    </nav>
+
+    <!-- Main content -->
+    <main class="main-content">
+      <!-- Header -->
+      <header class="top-header">
+        <div class="header-date" id="headerDate"></div>
+        <div class="header-actions">
+          <button class="btn btn-sm btn-outline" onclick="refreshAll()">🔄 Aggiorna</button>
+          <button class="btn btn-sm btn-primary" onclick="openAddModal()">+ Aggiungi</button>
+        </div>
+      </header>
+
+      <!-- ── TAB: Panoramica ── -->
+      <section class="tab-content active" id="tab-overview">
+        <div class="page-title" style="display:flex;align-items:center;gap:.75rem">
+          Panoramica
+          <div style="display:flex;align-items:center;gap:.4rem;font-size:.9rem">
+            <button class="btn btn-sm btn-outline" onclick="changeOverviewDate(-1)">&#8592;</button>
+            <span id="overviewDate" style="min-width:7rem;text-align:center"></span>
+            <button class="btn btn-sm btn-outline" id="overviewNextBtn" onclick="changeOverviewDate(1)">&#8594;</button>
+          </div>
+        </div>
+
+        <!-- KPI cards -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-icon">🔥</div>
+            <div class="kpi-value" id="kpiCalIn">—</div>
+            <div class="kpi-label">Calorie assunte</div>
+            <div class="kpi-progress">
+              <div class="progress-bar"><div class="progress-fill calorie-fill" id="kpiCalInBar"></div></div>
+              <span id="kpiCalGoal">/ — kcal</span>
+            </div>
+          </div>
+          <div class="kpi-card kpi-card-clickable" onclick="openCalorieBruciateModal()">
+            <div class="kpi-icon">⚡</div>
+            <div class="kpi-value" id="kpiCalOut">—</div>
+            <div class="kpi-label">Calorie bruciate <span class="kpi-edit-hint">✏️</span></div>
+            <div class="kpi-sublabel" id="kpiCalOutSource" style="font-size:.7rem;color:var(--text2);margin-top:.2rem"></div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon balance-icon" id="kpiBalanceIcon">⚖️</div>
+            <div class="kpi-value" id="kpiBalance">—</div>
+            <div class="kpi-label">Bilancio netto</div>
+          </div>
+          <div class="kpi-card kpi-card-clickable" onclick="openWeightModal()">
+            <div class="kpi-icon">⚖️</div>
+            <div class="kpi-value" id="kpiWeight">—</div>
+            <div class="kpi-label">Peso (kg) <span class="kpi-edit-hint">✏️</span></div>
+          </div>
+        </div>
+
+        <!-- Macros row -->
+        <div class="macros-row">
+          <div class="macro-card protein">
+            <div class="macro-name">💪 Proteine</div>
+            <div class="macro-bar-wrap">
+              <div class="macro-progress-bar"><div class="macro-fill" id="macroProteinBar"></div></div>
+            </div>
+            <div class="macro-values"><span id="macroProtein">0g</span> / <span id="macroProteinGoal">—g</span></div>
+          </div>
+          <div class="macro-card carbs">
+            <div class="macro-name">🌾 Carboidrati</div>
+            <div class="macro-bar-wrap">
+              <div class="macro-progress-bar"><div class="macro-fill" id="macroCarbsBar"></div></div>
+            </div>
+            <div class="macro-values"><span id="macroCarbs">0g</span> / <span id="macroCarbsGoal">—g</span></div>
+          </div>
+          <div class="macro-card fat">
+            <div class="macro-name">🫒 Grassi</div>
+            <div class="macro-bar-wrap">
+              <div class="macro-progress-bar"><div class="macro-fill" id="macroFatBar"></div></div>
+            </div>
+            <div class="macro-values"><span id="macroFat">0g</span> / <span id="macroFatGoal">—g</span></div>
+          </div>
+        </div>
+
+        <!-- Charts row -->
+        <div class="charts-row">
+          <div class="chart-card">
+            <div class="chart-title">Calorie 30 giorni</div>
+            <canvas id="chartCalories"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Andamento peso</div>
+            <canvas id="chartWeight"></canvas>
+          </div>
+        </div>
+
+        <!-- Goal progress -->
+        <div class="section-title" id="goalsOverviewTitle" style="display:none">🎯 Obiettivi</div>
+        <div id="goalsOverviewCards" class="goals-overview-grid"></div>
+
+        <!-- Activity summary -->
+        <div class="section-title">Attività questa settimana</div>
+        <div id="weeklyActivities" class="activities-list"></div>
+      </section>
+
+      <!-- ── TAB: Obiettivi ── -->
+      <section class="tab-content" id="tab-goals">
+        <div class="page-title">Obiettivi</div>
+
+        <!-- Progress cards -->
+        <div id="goalsProgressCards" class="goals-grid"></div>
+
+        <!-- Form impostazione obiettivi -->
+        <div class="card" style="margin-top:1.5rem">
+          <h3>✏️ Imposta i tuoi obiettivi</h3>
+          <div class="goals-form-grid">
+
+            <div class="goal-form-block">
+              <div class="goal-form-title">⚖️ Peso corporeo</div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Peso obiettivo (kg)</label>
+                  <input type="number" id="gGoalWeight" step="0.1" placeholder="72.0" />
+                </div>
+                <div class="form-group">
+                  <label>Entro il</label>
+                  <input type="date" id="gGoalWeightDate" />
+                </div>
+              </div>
+            </div>
+
+            <div class="goal-form-block">
+              <div class="goal-form-title">🚴 Ciclismo</div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Km totali per quest'anno</label>
+                  <input type="number" id="gGoalCycling" placeholder="3000" />
+                </div>
+              </div>
+            </div>
+
+            <div class="goal-form-block">
+              <div class="goal-form-title">🏃 Corsa</div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Km totali per quest'anno</label>
+                  <input type="number" id="gGoalRunning" placeholder="500" />
+                </div>
+              </div>
+            </div>
+
+            <div class="goal-form-block">
+              <div class="goal-form-title">👟 Passi</div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Obiettivo passi giornalieri</label>
+                  <input type="number" id="gGoalSteps" placeholder="10000" />
+                </div>
+              </div>
+            </div>
+
+            <div class="goal-form-block" style="grid-column:1/-1">
+              <div class="goal-form-title">📝 Altri obiettivi</div>
+              <div class="form-group">
+                <textarea id="gGoalCustom" rows="3" placeholder="es. Completare una gran fondo, fare 3 sessioni di yoga a settimana..."></textarea>
+              </div>
+            </div>
+
+          </div>
+          <button class="btn btn-primary" style="margin-top:1rem" onclick="saveGoals()">Salva obiettivi</button>
+        </div>
+      </section>
+
+      <!-- ── TAB: Nutrizione ── -->
+      <section class="tab-content" id="tab-nutrition">
+        <div class="page-title">Nutrizione</div>
+
+        <div class="date-nav">
+          <button class="btn btn-sm btn-outline" onclick="changeNutritionDate(-1)">‹</button>
+          <span id="nutritionDateLabel" class="date-label"></span>
+          <button class="btn btn-sm btn-outline" id="btnNutritionForward" onclick="changeNutritionDate(1)">›</button>
+          <button class="btn btn-sm btn-outline" id="btnNutritionToday" onclick="goToToday()" style="display:none">Oggi</button>
+        </div>
+
+        <div class="meal-groups" id="mealGroups"></div>
+
+        <button class="btn btn-primary btn-block" onclick="openAddMealModal()">+ Aggiungi pasto</button>
+      </section>
+
+      <!-- ── TAB: Attività ── -->
+      <section class="tab-content" id="tab-activities">
+        <div class="page-title">Attività fisiche</div>
+        <div id="activitiesList" class="activities-full-list"></div>
+        <button class="btn btn-primary btn-block" onclick="openAddActivityModal()">+ Registra attività</button>
+      </section>
+
+      <!-- ── TAB: Piano allenamento ── -->
+      <section class="tab-content" id="tab-training">
+        <div class="page-title">Piano di allenamento</div>
+
+        <div id="trainingPlanHeader" class="plan-header"></div>
+
+        <div class="plan-actions">
+          <button class="btn btn-outline btn-sm" onclick="openNewPlanModal()">🧠 Crea piano con AI</button>
+          <button class="btn btn-outline btn-sm" onclick="openAdjustPlanModal()">✏️ Segnala pausa/modifica</button>
+        </div>
+
+        <div id="trainingSessions" class="sessions-grid"></div>
+
+        <div class="section-title" style="margin-top:2rem">Allenamento suggerito per oggi</div>
+        <div id="suggestedWorkout" class="workout-suggestion"></div>
+        <button class="btn btn-outline btn-sm" onclick="loadSuggestedWorkout()">🎲 Genera suggerimento</button>
+      </section>
+
+      <!-- ── TAB: Salute ── -->
+      <section class="tab-content" id="tab-health">
+        <div class="page-title">Dati salute</div>
+
+        <!-- Calorie totali (campo prominente) -->
+        <div class="card" style="border:2px solid var(--accent);margin-bottom:1rem">
+          <h3 style="margin-bottom:.5rem">⚡ Calorie totali giornata</h3>
+          <p style="color:var(--text2);font-size:.82rem;margin-bottom:.75rem">
+            Copia il totale dall'app <strong>Fitness di iPhone</strong> (include già BMR + movimento + sport).
+          </p>
+          <div class="form-row" style="align-items:flex-end;gap:.75rem">
+            <div class="form-group" style="max-width:160px">
+              <label>Data</label>
+              <input type="date" id="healthDate" />
+            </div>
+            <div class="form-group">
+              <label>Calorie totali (kcal)</label>
+              <input type="number" id="inputIphoneCalories" placeholder="es. 2400" style="font-size:1.2rem" />
+            </div>
+            <button class="btn btn-primary" style="margin-bottom:0" onclick="saveIphoneCalories()">Salva</button>
+          </div>
+        </div>
+
+        <div class="health-form card">
+          <h3>Altri dati salute</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Peso (kg)</label>
+              <input type="number" id="inputWeight" step="0.1" placeholder="75.5" />
+            </div>
+            <div class="form-group">
+              <label>Sonno (ore)</label>
+              <input type="number" id="inputSleep" step="0.5" placeholder="7.5" />
+            </div>
+            <div class="form-group">
+              <label>Passi</label>
+              <input type="number" id="inputSteps" placeholder="8500" />
+            </div>
+            <div class="form-group">
+              <label>Body Battery</label>
+              <input type="number" id="inputBodyBattery" min="0" max="100" placeholder="72" />
+            </div>
+            <div class="form-group">
+              <label>HRV (ms)</label>
+              <input type="number" id="inputHrv" step="0.1" placeholder="45.2" />
+            </div>
+            <div class="form-group">
+              <label>Stress (0-100)</label>
+              <input type="number" id="inputStress" min="0" max="100" placeholder="35" />
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="saveHealthData()">Salva dati salute</button>
+        </div>
+
+        <div class="charts-row" style="margin-top:1.5rem">
+          <div class="chart-card">
+            <div class="chart-title">Peso — ultimi 60 giorni</div>
+            <canvas id="chartWeightHealth"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Sonno e passi — ultimi 30 giorni</div>
+            <canvas id="chartSleep"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── TAB: Impostazioni ── -->
+      <section class="tab-content" id="tab-settings">
+        <div class="page-title">Impostazioni profilo</div>
+        <div class="card">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Nome</label>
+              <input type="text" id="settingName" placeholder="Mario Rossi" />
+            </div>
+            <div class="form-group">
+              <label>Età</label>
+              <input type="number" id="settingAge" placeholder="30" />
+            </div>
+            <div class="form-group">
+              <label>Altezza (cm)</label>
+              <input type="number" id="settingHeight" placeholder="175" />
+            </div>
+            <div class="form-group">
+              <label>Obiettivo</label>
+              <select id="settingGoal">
+                <option value="lose_weight">Perdere peso</option>
+                <option value="maintain">Mantenere</option>
+                <option value="gain_muscle">Aumentare massa</option>
+              </select>
+            </div>
+          </div>
+          <h3>Obiettivi giornalieri</h3>
+          <p style="font-size:.8rem;color:var(--text2);margin-bottom:.75rem">
+            Calcolati per ciclista endurance (75.8 kg) con obiettivo ricomposizione corporea:
+            proteine elevate per il recupero (2 g/kg), carboidrati adeguati come carburante
+            (3.7 g/kg), grassi moderati (1 g/kg). Modifica liberamente in base ai tuoi dati.
+          </p>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Calorie (kcal)</label>
+              <input type="number" id="settingCalories" placeholder="2400" />
+            </div>
+            <div class="form-group">
+              <label>Proteine (g)</label>
+              <input type="number" id="settingProtein" placeholder="150" />
+            </div>
+            <div class="form-group">
+              <label>Carboidrati (g)</label>
+              <input type="number" id="settingCarbs" placeholder="280" />
+            </div>
+            <div class="form-group">
+              <label>Grassi (g)</label>
+              <input type="number" id="settingFat" placeholder="75" />
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="saveSettings()">Salva impostazioni</button>
+        </div>
+        <div class="card" style="margin-top:1rem">
+          <h3>Integrazioni</h3>
+          <button class="btn btn-outline" onclick="connectStrava()">🚴 Collega Strava</button>
+          <button class="btn btn-outline" style="margin-left:.5rem" onclick="syncStrava()">🔄 Sincronizza Strava</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ── MODALS ── -->
+  <div class="modal-overlay" id="modalOverlay" onclick="closeModal()"></div>
+
+  <!-- Add Meal Modal -->
+  <div class="modal" id="modalMeal">
+    <div class="modal-header"><h3>Aggiungi pasto</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Pasto</label>
+        <select id="mealTime">
+          <option value="breakfast">Colazione</option>
+          <option value="lunch">Pranzo</option>
+          <option value="dinner">Cena</option>
+          <option value="snack">Spuntino</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Nome</label><input type="text" id="mealName" placeholder="es. Pasta al pomodoro" /></div>
+      <div class="form-row">
+        <div class="form-group"><label>Calorie (kcal)</label><input type="number" id="mealCalories" placeholder="400" /></div>
+        <div class="form-group"><label>Quantità (g)</label><input type="number" id="mealQuantity" placeholder="200" /></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Proteine (g)</label><input type="number" id="mealProtein" placeholder="15" /></div>
+        <div class="form-group"><label>Carbs (g)</label><input type="number" id="mealCarbs" placeholder="60" /></div>
+        <div class="form-group"><label>Grassi (g)</label><input type="number" id="mealFat" placeholder="8" /></div>
+        <div class="form-group"><label>Fibre (g)</label><input type="number" id="mealFiber" placeholder="3" /></div>
+      </div>
+      <div class="form-group"><label>Note</label><input type="text" id="mealNotes" placeholder="opzionale" /></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
+      <button class="btn btn-primary" onclick="saveMeal()">Salva</button>
+    </div>
+  </div>
+
+  <!-- Calorie bruciate Modal -->
+  <div class="modal" id="modalCalorieBruciate">
+    <div class="modal-header"><h3>⚡ Calorie totali giornata</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <p style="color:var(--text2);font-size:.85rem;margin-bottom:1rem">
+        Copia il totale dall'app <strong>Fitness di iPhone</strong> (include già BMR + movimento + sport).
+        Quando inserito, sostituisce la stima automatica.
+      </p>
+      <div class="form-row">
+        <div class="form-group" style="max-width:160px">
+          <label>Data</label>
+          <input type="date" id="calbDate" />
+        </div>
+        <div class="form-group">
+          <label>Calorie totali (kcal)</label>
+          <input type="number" id="calbInput" placeholder="es. 2400" style="font-size:1.4rem;text-align:center" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
+      <button class="btn btn-primary" onclick="saveCalorieBruciate()">Salva</button>
+    </div>
+  </div>
+
+  <!-- Quick Weight Modal -->
+  <div class="modal" id="modalWeight">
+    <div class="modal-header"><h3>⚖️ Peso</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Data</label>
+          <input type="date" id="quickWeightDate" />
+        </div>
+        <div class="form-group">
+          <label>Peso (kg)</label>
+          <input type="number" id="quickWeightInput" step="0.1" placeholder="75.5" style="font-size:1.5rem;text-align:center" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
+      <button class="btn btn-primary" onclick="saveQuickWeight()">Salva</button>
+    </div>
+  </div>
+
+  <!-- Add Activity Modal -->
+  <div class="modal" id="modalActivity">
+    <div class="modal-header"><h3>Registra attività</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><label>Tipo</label>
+          <select id="activityType">
+            <option value="run">Corsa</option>
+            <option value="ride">Ciclismo</option>
+            <option value="swim">Nuoto</option>
+            <option value="walk">Camminata</option>
+            <option value="hike">Escursione</option>
+            <option value="strength">Forza</option>
+            <option value="yoga">Yoga</option>
+            <option value="other">Altro</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Nome</label><input type="text" id="activityName" placeholder="es. Uscita in bici" /></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Durata (min)</label><input type="number" id="activityDuration" placeholder="60" /></div>
+        <div class="form-group"><label>Distanza (km)</label><input type="number" id="activityDistance" step="0.1" placeholder="20" /></div>
+        <div class="form-group"><label>Dislivello (m)</label><input type="number" id="activityElevation" placeholder="300" /></div>
+      </div>
+      <div class="form-group"><label>Note</label><input type="text" id="activityNotes" placeholder="opzionale" /></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
+      <button class="btn btn-primary" onclick="saveActivity()">Salva</button>
+    </div>
+  </div>
+
+  <!-- New Plan Modal -->
+  <div class="modal" id="modalNewPlan">
+    <div class="modal-header"><h3>Crea piano con AI 🧠</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Descrivi il tuo obiettivo</label>
+        <textarea id="planRequest" rows="4" placeholder="es. Voglio correre una mezza maratona in 4 mesi, mi alleno 4 volte a settimana, sono un corridore intermedio"></textarea>
+      </div>
+      <p class="hint">Claude genererà un piano dettagliato con sessioni settimanali personalizzate.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
+      <button class="btn btn-primary" onclick="generatePlan()">Genera piano</button>
+    </div>
+  </div>
+
+  <!-- Adjust Plan Modal -->
+  <div class="modal" id="modalAdjustPlan">
+    <div class="modal-header"><h3>Modifica piano</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Motivo</label>
+        <select id="adjustReason">
+          <option value="illness">Malattia</option>
+          <option value="injury">Infortunio</option>
+          <option value="travel">Viaggio/lavoro</option>
+          <option value="sleep">Sonno insufficiente</option>
+          <option value="other">Altro</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Dettagli</label>
+        <textarea id="adjustDetail" rows="3" placeholder="Spiega la situazione..."></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Giorni da saltare</label>
+          <input type="number" id="adjustSkipDays" value="0" min="0" max="30" />
+        </div>
+        <div class="form-group" style="justify-content:flex-end;align-items:flex-end">
+          <label><input type="checkbox" id="adjustReduceIntensity" /> Riduci intensità</label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
+      <button class="btn btn-primary" onclick="submitPlanAdjustment()">Applica</button>
+    </div>
+  </div>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/charts.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
