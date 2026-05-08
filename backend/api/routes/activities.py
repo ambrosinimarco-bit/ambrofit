@@ -43,3 +43,18 @@ def delete_activity(activity_id: str):
     db = get_supabase()
     db.table("activities").delete().eq("id", activity_id).execute()
     return {"ok": True}
+
+
+@router.patch("/{activity_id}/checkin")
+def checkin_activity(activity_id: str, data: dict):
+    db = get_supabase()
+    update_data = {}
+    if "rpe" in data:
+        update_data["rpe"] = int(data["rpe"])
+    if "physical_notes" in data:
+        update_data["physical_notes"] = data["physical_notes"]
+    update_data["check_in_done"] = True
+    result = db.table("activities").update(update_data).eq("id", activity_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Attività non trovata")
+    return result.data[0]

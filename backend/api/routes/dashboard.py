@@ -108,6 +108,9 @@ def update_user_profile(user_id: str, data: dict):
         "daily_calorie_goal", "protein_goal_g", "carbs_goal_g", "fat_goal_g",
         "goal_weight_kg", "goal_weight_date", "goal_cycling_km_year",
         "goal_run_km_year", "goal_steps_day", "goals_custom",
+        "ftp_watts", "power_zone_1_max", "power_zone_2_max", "power_zone_3_max",
+        "power_zone_4_max", "target_cadence_min", "target_cadence_max",
+        "medical_notes", "coaching_notes",
     }
     safe_data = {k: v for k, v in data.items() if k in safe_fields and v != ""}
     result = db.table("user_profiles").update(safe_data).eq("id", user_id).execute()

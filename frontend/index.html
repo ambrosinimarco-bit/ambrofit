@@ -19,6 +19,7 @@
         <li><a href="#" class="nav-item active" data-tab="overview"><span>📊</span> Panoramica</a></li>
         <li><a href="#" class="nav-item" data-tab="nutrition"><span>🍽</span> Nutrizione</a></li>
         <li><a href="#" class="nav-item" data-tab="activities"><span>🏃</span> Attività</a></li>
+        <li><a href="#" class="nav-item" data-tab="exercises"><span>💪</span> Esercizi</a></li>
         <li><a href="#" class="nav-item" data-tab="training"><span>📅</span> Piano</a></li>
         <li><a href="#" class="nav-item" data-tab="health"><span>❤️</span> Salute</a></li>
         <li><a href="#" class="nav-item" data-tab="goals"><span>🎯</span> Obiettivi</a></li>
@@ -215,6 +216,16 @@
         <button class="btn btn-primary btn-block" onclick="openAddActivityModal()">+ Registra attività</button>
       </section>
 
+      <!-- ── TAB: Esercizi ── -->
+      <section class="tab-content" id="tab-exercises">
+        <div class="page-title">Esercizi &amp; Routine</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <div></div>
+          <button class="btn btn-primary btn-sm" onclick="openAddRoutineModal()">+ Nuova routine</button>
+        </div>
+        <div id="routinesList"></div>
+      </section>
+
       <!-- ── TAB: Piano allenamento ── -->
       <section class="tab-content" id="tab-training">
         <div class="page-title">Piano di allenamento</div>
@@ -350,6 +361,17 @@
             </div>
           </div>
           <button class="btn btn-primary" onclick="saveSettings()">Salva impostazioni</button>
+
+          <h3 style="margin-top:1.5rem">Profilo ciclista</h3>
+          <div class="form-row">
+            <div class="form-group"><label>FTP (W)</label><input type="number" id="settingFtp" placeholder="202"/></div>
+            <div class="form-group"><label>Cadenza min (rpm)</label><input type="number" id="settingCadMin" placeholder="85"/></div>
+            <div class="form-group"><label>Cadenza max (rpm)</label><input type="number" id="settingCadMax" placeholder="95"/></div>
+          </div>
+          <div class="form-group" style="max-width:100%">
+            <label>Note mediche/vincoli</label>
+            <textarea id="settingMedical" rows="2" placeholder="es. ernioplastica inguinale..."></textarea>
+          </div>
         </div>
         <div class="card" style="margin-top:1rem">
           <h3>Integrazioni</h3>
@@ -519,6 +541,46 @@
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
       <button class="btn btn-primary" onclick="submitPlanAdjustment()">Applica</button>
+    </div>
+  </div>
+
+  <!-- Routine Modal -->
+  <div class="modal" id="modalRoutine">
+    <div class="modal-header"><h3 id="routineModalTitle">Nuova routine</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Nome</label><input type="text" id="routineName" placeholder="es. Circuito core"/></div>
+      <div class="form-group"><label>Tipo</label>
+        <select id="routineType">
+          <option value="strength">Forza</option>
+          <option value="mobility">Mobilità</option>
+          <option value="warmup">Riscaldamento</option>
+          <option value="cooldown">Defaticamento</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Descrizione</label><input type="text" id="routineDescription" placeholder="opzionale"/></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
+      <button class="btn btn-primary" onclick="saveRoutine()">Salva</button>
+    </div>
+  </div>
+
+  <!-- Exercise Modal -->
+  <div class="modal" id="modalExercise">
+    <div class="modal-header"><h3 id="exerciseModalTitle">Nuovo esercizio</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Nome</label><input type="text" id="exerciseName" placeholder="es. Plank"/></div>
+      <div class="form-row">
+        <div class="form-group"><label>Serie</label><input type="number" id="exerciseSets" placeholder="3"/></div>
+        <div class="form-group"><label>Ripetizioni</label><input type="text" id="exerciseReps" placeholder="12 o 30s"/></div>
+        <div class="form-group"><label>Riposo (sec)</label><input type="number" id="exerciseRest" placeholder="60"/></div>
+      </div>
+      <div class="form-group"><label>Note</label><input type="text" id="exerciseNotes" placeholder="opzionale"/></div>
+      <input type="hidden" id="exerciseRoutineId"/>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
+      <button class="btn btn-primary" onclick="saveExercise()">Salva</button>
     </div>
   </div>
 

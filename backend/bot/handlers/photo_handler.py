@@ -51,7 +51,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         if photo_type == "garmin":
             result = analyze_garmin_screenshot(image_bytes)
             _save_garmin_data(db, user_id, result)
-            await update.message.reply_text(_format_garmin_reply(result), parse_mode="Markdown")
+            reply_text = _format_garmin_reply(result, db, user_id)
+            await update.message.reply_text(reply_text, parse_mode="Markdown")
 
         elif photo_type == "label":
             quantity = _extract_quantity(caption)
@@ -103,25 +104,87 @@ def _save_label_meal(db, user_id: str, result: dict, quantity: float):
 
 def _save_garmin_data(db, user_id: str, result: dict):
     target_date = result.get("date") or date.today().isoformat()
-    existing = db.table("daily_health").select("id").eq("user_id", user_id).eq("health_date", target_date).execute()
+    screen_type = result.get("screen_type", "health")
 
-    data = {
-        "user_id": user_id,
-        "health_date": target_date,
-        "body_battery": result.get("body_battery_end") or result.get("body_battery_start"),
-        "stress_score": result.get("stress_score"),
-        "hrv_ms": result.get("hrv_ms"),
-        "resting_hr": result.get("resting_hr"),
-        "sleep_hours": result.get("sleep_hours"),
-        "steps": result.get("steps"),
-        "notes": result.get("raw_text", "")[:500],
-    }
-    data = {k: v for k, v in data.items() if v is not None}
+    # Salva dati salute se presenti
+    has_health_data = any(result.get(k) for k in [
+        "body_battery_end", "body_battery_start", "stress_score",
+        "hrv_ms", "resting_hr", "sleep_hours", "steps",
+        "calories_active", "calories_total",
+    ])
+    if has_health_data or screen_type in ("health", "mixed"):
+        existing = db.table("daily_health").select("id")\
+            .eq("user_id", user_id).eq("health_date", target_date).execute()
 
-    if existing.data:
-        db.table("daily_health").update(data).eq("id", existing.data[0]["id"]).execute()
+        health_data = {
+            "user_id": user_id,
+            "health_date": target_date,
+            "body_battery": result.get("body_battery_end") or result.get("body_battery_start"),
+            "stress_score": result.get("stress_score"),
+            "hrv_ms": result.get("hrv_ms"),
+            "resting_hr": result.get("resting_hr"),
+            "sleep_hours": result.get("sleep_hours"),
+            "steps": result.get("steps"),
+            "notes": result.get("raw_text", "")[:500],
+        }
+        health_data = {k: v for k, v in health_data.items() if v is not None}
+
+        if existing.data:
+            db.table("daily_health").update(health_data).eq("id", existing.data[0]["id"]).execute()
+        else:
+            db.table("daily_health").insert(health_data).execute()
+
+    # Salva come attività se ci sono dati di potenza/attività ciclistica
+    has_activity_data = any(result.get(k) for k in [
+        "avg_power_w", "normalized_power_w", "avg_hr_bpm", "duration_min",
+    ])
+    if screen_type in ("activity", "mixed") or has_activity_data:
+        activity_name = result.get("activity_name") or "Attività Garmin"
+        duration = result.get("duration_min") or 0
+        db.table("activities").insert({
+            "user_id": user_id,
+            "activity_date": target_date,
+            "activity_type": "ride",
+            "name": activity_name,
+            "duration_min": float(duration),
+            "distance_km": result.get("distance_km"),
+            "elevation_m": result.get("elevation_m"),
+            "avg_heart_rate": result.get("avg_hr_bpm"),
+            "max_heart_rate": result.get("max_hr_bpm"),
+            "source": "garmin_screenshot",
+            "notes": result.get("raw_text", "")[:500],
+        }).execute()
+
+
+def _get_coaching_comment(result: dict, profile: dict) -> str:
+    """Genera un commento coaching basato sui dati Garmin e il profilo utente."""
+    avg_power = result.get("avg_power_w")
+    if not avg_power:
+        return ""
+
+    ftp = profile.get("ftp_watts") or 0
+    z2_max = profile.get("power_zone_2_max") or 162
+    ftp_val = ftp if ftp else 200
+
+    if avg_power < z2_max:
+        comment = f"Buona sessione Z2 ({avg_power}W media) — ottimo per costruire la base aerobica."
+    elif avg_power >= ftp_val:
+        comment = f"Sessione intensa ad alta intensità ({avg_power}W media, vicino o sopra FTP) — monitora il recupero."
     else:
-        db.table("daily_health").insert(data).execute()
+        comment = f"Sessione a intensità moderata ({avg_power}W media) — zona di sviluppo."
+
+    if result.get("avg_cadence_rpm"):
+        cad = result["avg_cadence_rpm"]
+        cad_min = profile.get("target_cadence_min") or 85
+        cad_max = profile.get("target_cadence_max") or 95
+        if cad < cad_min:
+            comment += f" Cadenza {cad}rpm un po' bassa (target {cad_min}-{cad_max}rpm)."
+        elif cad > cad_max:
+            comment += f" Cadenza {cad}rpm alta — ottimo se era pianificato."
+        else:
+            comment += f" Cadenza {cad}rpm nel target."
+
+    return comment
 
 
 def _format_food_reply(result: dict) -> str:
@@ -155,8 +218,11 @@ def _format_label_reply(result: dict, quantity: float) -> str:
     )
 
 
-def _format_garmin_reply(result: dict) -> str:
+def _format_garmin_reply(result: dict, db=None, user_id: str = "") -> str:
+    screen_type = result.get("screen_type", "health")
     lines = ["📱 *Dati Garmin rilevati:*\n"]
+
+    # Dati salute
     if result.get("body_battery_end"):
         lines.append(f"🔋 Body Battery: `{result['body_battery_end']}`")
     if result.get("stress_score"):
@@ -169,5 +235,41 @@ def _format_garmin_reply(result: dict) -> str:
         lines.append(f"😴 Sonno: `{result['sleep_hours']}h`")
     if result.get("steps"):
         lines.append(f"👟 Passi: `{result['steps']:,}`")
+
+    # Dati attività ciclistica
+    if screen_type in ("activity", "mixed") or result.get("avg_power_w"):
+        if result.get("activity_name"):
+            lines.append(f"\n🚴 *Attività:* {result['activity_name']}")
+        if result.get("duration_min"):
+            lines.append(f"⏱ Durata: `{result['duration_min']} min`")
+        if result.get("distance_km"):
+            lines.append(f"📍 Distanza: `{result['distance_km']} km`")
+        if result.get("avg_power_w"):
+            lines.append(f"⚡ Potenza media: `{result['avg_power_w']} W`")
+        if result.get("normalized_power_w"):
+            lines.append(f"📊 NP: `{result['normalized_power_w']} W`")
+        if result.get("avg_cadence_rpm"):
+            lines.append(f"🔄 Cadenza media: `{result['avg_cadence_rpm']} rpm`")
+        if result.get("avg_hr_bpm"):
+            lines.append(f"❤️ FC media: `{result['avg_hr_bpm']} bpm`")
+        if result.get("elevation_m"):
+            lines.append(f"⛰ Dislivello: `{result['elevation_m']} m`")
+        if result.get("tss"):
+            lines.append(f"📈 TSS: `{result['tss']}`")
+
     lines.append("\n✅ Dati salvati!")
+
+    # Commento coaching se ci sono dati di potenza e db/user_id disponibili
+    if db and user_id and result.get("avg_power_w"):
+        try:
+            profile_res = db.table("user_profiles").select(
+                "ftp_watts,power_zone_2_max,target_cadence_min,target_cadence_max"
+            ).eq("id", user_id).limit(1).execute()
+            profile = (profile_res.data or [{}])[0]
+            coaching = _get_coaching_comment(result, profile)
+            if coaching:
+                lines.append(f"\n🎯 *Coach:* {coaching}")
+        except Exception:
+            pass
+
     return "\n".join(lines)

@@ -124,7 +124,7 @@ Rispondi con JSON esatto:
 
 
 def analyze_garmin_screenshot(image_bytes: bytes) -> dict:
-    """Estrae dati fitness da uno screenshot di Garmin Connect."""
+    """Estrae dati fitness da uno screenshot di Garmin Connect (salute o attività ciclistica)."""
     b64 = _image_to_base64(image_bytes)
 
     response = client.messages.create(
@@ -140,10 +140,11 @@ def analyze_garmin_screenshot(image_bytes: bytes) -> dict:
                 },
                 {
                     "type": "text",
-                    "text": """Questo è uno screenshot di Garmin Connect. Estrai tutti i dati visibili.
+                    "text": """Questo è uno screenshot di Garmin Connect. Determina se mostra dati di salute giornaliera o un'attività ciclistica, poi estrai tutti i dati visibili.
 
 Rispondi con JSON esatto (usa null per i valori non visibili):
 {
+  "screen_type": "health|activity|mixed",
   "date": "YYYY-MM-DD o null",
   "body_battery_start": null,
   "body_battery_end": null,
@@ -159,6 +160,16 @@ Rispondi con JSON esatto (usa null per i valori non visibili):
   "calories_active": null,
   "calories_total": null,
   "intensity_minutes": null,
+  "activity_name": null,
+  "avg_power_w": null,
+  "normalized_power_w": null,
+  "avg_cadence_rpm": null,
+  "avg_hr_bpm": null,
+  "max_hr_bpm": null,
+  "duration_min": null,
+  "distance_km": null,
+  "elevation_m": null,
+  "tss": null,
   "raw_text": "testo grezzo rilevante dallo screenshot"
 }""",
                 },
@@ -176,7 +187,7 @@ Messaggio: "{transcript}"
 
 Rispondi con JSON esatto:
 {{
-  "type": "meal|activity|total_calories_iphone|weight|sleep|steps|correction|status|general",
+  "type": "meal|activity|total_calories_iphone|weight|sleep|steps|correction|status|check_in|coach|zwo_request|general",
   "data": {{
     "meal_name": "...", "calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0, "meal_time": "snack",
     "activity_type": "run|ride|swim|walk|strength|other", "duration_min": 0, "distance_km": null, "name": "...",
@@ -184,7 +195,9 @@ Rispondi con JSON esatto:
     "total_calories_iphone": null,
     "entity_type": "meal|activity|weight|sleep|steps",
     "description": "cosa correggere in italiano",
-    "corrections": {{}}
+    "corrections": {{}},
+    "rpe": null,
+    "physical_notes": null
   }},
   "confidence": "high|medium|low"
 }}
@@ -195,6 +208,9 @@ Regole per il tipo:
 - activity: attività sportiva specifica con durata. Es: "ho fatto 1 ora di bici"
 - meal: cibo mangiato. Es: "ho mangiato una mela"
 - status: vuole sapere come sta oggi / quanto può mangiare. Es: "come sto oggi", "dimmi la situazione", "quanto posso ancora mangiare", "status", "riepilogo"
+- check_in: l'utente valuta la sessione appena fatta (es. "8", "7/10", "8, qualche fastidio all'inguine", "mi sono sentito bene, darei un 9"). Estrai: rpe (int 1-10), physical_notes (str, optional). Il messaggio è solo un voto numerico o voto con breve commento fisico.
+- coach: domanda/frase di coaching (es. "come sto andando", "ho saltato la sessione di mercoledì", "ho fastidio all'inguine", "crea un piano per questa settimana", "oggi mi sono sentito bene con 155W di media"). NON usare per registrare dati specifici come pasti o attività con durata.
+- zwo_request: richiesta esplicita di generare file .zwo per allenamento indoor (es. "crea una sessione z2 45 minuti", "generami un workout sweetspot di 1 ora", "voglio un allenamento VO2max").
 """
 
     response = client.messages.create(
@@ -303,6 +319,41 @@ Rispondi con JSON:
         messages=[{"role": "user", "content": prompt}],
     )
     import json
+    return json.loads(response.content[0].text)
+
+
+def plan_zwo_workout(request: str, ftp: int) -> dict:
+    """Genera struttura JSON di un workout indoor .zwo a partire da una richiesta in linguaggio naturale."""
+    prompt = f"""Crea un workout indoor per ciclismo basato su questa richiesta: "{request}"
+L'utente ha FTP di {ftp}W.
+
+Rispondi con JSON esatto:
+{{
+  "name": "Nome workout (es. Z2 Endurance 60min)",
+  "description": "Descrizione breve del workout e obiettivo",
+  "segments": [
+    {{"type": "Warmup", "duration_min": 10, "power_low": 0.50, "power_high": 0.75}},
+    {{"type": "SteadyState", "duration_min": 45, "power": 0.70}},
+    {{"type": "Cooldown", "duration_min": 5, "power_low": 0.55, "power_high": 0.35}}
+  ]
+}}
+
+Tipi segmento validi:
+- Warmup: richiede duration_min, power_low, power_high
+- SteadyState: richiede duration_min, power (frazione FTP, es. 0.70 per Z2, 0.88 per SS, 1.05 per VO2max)
+- Cooldown: richiede duration_min, power_high (iniziale), power_low (finale)
+- IntervalsT: richiede repeat (numero ripetizioni), on_duration_min, off_duration_min, on_power, off_power
+
+Usa sempre riscaldamento (almeno 8-10min) e defaticamento (almeno 5min).
+Power come frazione FTP: Z2=0.60-0.75, SweetSpot=0.85-0.95, Threshold=0.95-1.05, VO2max=1.05-1.20."""
+
+    import json
+    response = client.messages.create(
+        model="claude-opus-4-7",
+        max_tokens=1024,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": prompt}],
+    )
     return json.loads(response.content[0].text)
 
 

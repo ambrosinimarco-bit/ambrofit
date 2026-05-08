@@ -60,6 +60,9 @@ class ActivityCreate(BaseModel):
     strava_id: Optional[str] = None
     notes: Optional[str] = None
     source: str = "manual"
+    rpe: Optional[int] = None
+    physical_notes: Optional[str] = None
+    check_in_done: Optional[bool] = False
 
 
 class ActivityOut(ActivityCreate):
@@ -105,6 +108,15 @@ class UserProfileCreate(BaseModel):
     strava_access_token: Optional[str] = None
     strava_refresh_token: Optional[str] = None
     strava_token_expires_at: Optional[datetime] = None
+    ftp_watts: Optional[int] = None
+    power_zone_1_max: Optional[int] = None
+    power_zone_2_max: Optional[int] = None
+    power_zone_3_max: Optional[int] = None
+    power_zone_4_max: Optional[int] = None
+    target_cadence_min: Optional[int] = None
+    target_cadence_max: Optional[int] = None
+    medical_notes: Optional[str] = None
+    coaching_notes: Optional[str] = None
 
 
 class UserProfileOut(UserProfileCreate):

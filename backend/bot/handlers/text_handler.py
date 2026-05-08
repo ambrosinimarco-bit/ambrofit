@@ -1,3 +1,5 @@
+import io
+import re
 from datetime import date
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -43,7 +45,7 @@ async def dispatch_message(
             await _handle_correction(update, db, user_id, data, text)
 
         elif data_type == "activity":
-            db.table("activities").insert({
+            result = db.table("activities").insert({
                 "user_id": user_id,
                 "activity_date": date.today().isoformat(),
                 "activity_type": data.get("activity_type", "other"),
@@ -53,12 +55,28 @@ async def dispatch_message(
                 "notes": text,
                 "source": source,
             }).execute()
-            await update.message.reply_text(
+            activity_msg = (
                 f"✅ *Attività registrata:* {data.get('name', 'Attività')}\n"
                 f"⏱ `{data.get('duration_min', 0)} min`"
-                + (f" · 📍 `{data.get('distance_km')} km`" if data.get("distance_km") else ""),
-                parse_mode="Markdown",
+                + (f" · 📍 `{data.get('distance_km')} km`" if data.get("distance_km") else "")
             )
+            activity_msg += (
+                "\n\n📊 *Check-in:* Come ti sei sentito? Rispondimi con un voto da 1 a 10 "
+                "e segnala eventuali problemi fisici (es. '8, tutto ok' o '6, fastidio all\'inguine')"
+            )
+            await update.message.reply_text(activity_msg, parse_mode="Markdown")
+
+        elif data_type == "check_in":
+            await _handle_check_in(update, db, user_id, data)
+
+        elif data_type == "coach":
+            from backend.services.coach_service import get_coach_response
+            await update.message.reply_text("🧠 Sto elaborando la risposta del coach...")
+            response_text = await get_coach_response(user_id, text)
+            await update.message.reply_text(response_text)
+
+        elif data_type == "zwo_request":
+            await _handle_zwo_request(update, db, user_id, text)
 
         elif data_type == "weight":
             _upsert_health(db, user_id, {"weight_kg": data.get("weight_kg")})
@@ -108,6 +126,127 @@ async def dispatch_message(
         await update.message.reply_text(
             f"Non ho capito il messaggio. Prova a essere più specifico.\nErrore: {e}"
         )
+
+
+async def _handle_check_in(update, db, user_id: str, data: dict) -> None:
+    """Aggiorna l'ultima attività del giorno senza check-in con RPE e note fisiche."""
+    rpe = data.get("rpe")
+    physical_notes = data.get("physical_notes") or ""
+
+    # Trova l'ultima attività del giorno senza check-in
+    today = date.today().isoformat()
+    result = db.table("activities").select("*").eq("user_id", user_id)\
+        .eq("activity_date", today).eq("check_in_done", False)\
+        .order("created_at", desc=True).limit(1).execute()
+
+    if not result.data:
+        # Prova anche senza il filtro check_in_done (colonna potrebbe non esistere ancora)
+        result = db.table("activities").select("*").eq("user_id", user_id)\
+            .eq("activity_date", today)\
+            .order("created_at", desc=True).limit(1).execute()
+
+    if not result.data:
+        await update.message.reply_text(
+            "Non trovo attività registrate oggi da aggiornare con il check-in. "
+            "Registra prima un'attività!"
+        )
+        return
+
+    activity = result.data[0]
+    update_data = {"check_in_done": True}
+    if rpe is not None:
+        update_data["rpe"] = int(rpe)
+    if physical_notes:
+        update_data["physical_notes"] = physical_notes
+
+    db.table("activities").update(update_data).eq("id", activity["id"]).execute()
+
+    # Risposta coaching basata su RPE
+    if rpe is not None:
+        rpe_int = int(rpe)
+        if rpe_int <= 6:
+            coaching_comment = "Bel recupero, hai gestito bene il carico."
+        elif rpe_int <= 8:
+            coaching_comment = "Perfetto range per l'allenamento base."
+        else:
+            coaching_comment = "Sessione impegnativa, monitora il recupero nelle prossime 48h."
+        reply = (
+            f"✅ *Check-in registrato per:* {activity.get('name', 'Attività')}\n"
+            f"📊 RPE: `{rpe}/10`"
+        )
+        if physical_notes:
+            reply += f"\n📝 Note: _{physical_notes}_"
+        reply += f"\n\n🎯 {coaching_comment}"
+    else:
+        reply = f"✅ *Check-in registrato per:* {activity.get('name', 'Attività')}"
+        if physical_notes:
+            reply += f"\n📝 Note: _{physical_notes}_"
+
+    await update.message.reply_text(reply, parse_mode="Markdown")
+
+
+async def _handle_zwo_request(update, db, user_id: str, text: str) -> None:
+    """Genera e invia un file .zwo via Telegram."""
+    from backend.services.claude_service import plan_zwo_workout
+    from backend.services.zwo_service import generate_zwo_xml
+
+    # Fetch profilo utente
+    profile_res = db.table("user_profiles").select("ftp_watts,weight_kg").eq("id", user_id).limit(1).execute()
+    profile = (profile_res.data or [{}])[0]
+    ftp = profile.get("ftp_watts") or 200
+    weight_kg = profile.get("weight_kg") or 75.0
+
+    await update.message.reply_text("⚙️ Sto pianificando il workout con Claude AI...")
+
+    workout = plan_zwo_workout(text, ftp)
+    xml_content = generate_zwo_xml(workout, ftp, weight_kg)
+
+    # Nome file sicuro
+    workout_name = workout.get("name", "Workout")
+    safe_name = re.sub(r'[^\w\s-]', '', workout_name).strip().replace(' ', '_')
+    if not safe_name:
+        safe_name = "Workout"
+
+    # Invia file .zwo
+    file_bytes = io.BytesIO(xml_content.encode('utf-8'))
+    file_bytes.name = f"{safe_name}.zwo"
+    await update.message.reply_document(
+        document=file_bytes,
+        filename=f"{safe_name}.zwo",
+    )
+
+    # Invia descrizione
+    description = workout.get("description", "")
+    segments = workout.get("segments", [])
+    total_min = sum(float(s.get("duration_min", 0)) for s in segments)
+
+    reply = (
+        f"🚴 *{workout_name}*\n"
+        f"⏱ Durata totale: `{int(total_min)} minuti`\n\n"
+    )
+    if description:
+        reply += f"_{description}_\n\n"
+
+    reply += "*Struttura:*\n"
+    for seg in segments:
+        seg_type = seg.get("type", "")
+        dur = seg.get("duration_min", 0)
+        if seg_type == "IntervalsT":
+            repeat = seg.get("repeat", 4)
+            on_min = seg.get("on_duration_min", 1)
+            off_min = seg.get("off_duration_min", 1)
+            on_pwr = round(float(seg.get("on_power", 1.0)) * ftp)
+            off_pwr = round(float(seg.get("off_power", 0.55)) * ftp)
+            reply += f"  • Intervalli: {repeat}×{on_min}min @ ~{on_pwr}W / {off_min}min @ ~{off_pwr}W\n"
+        elif seg_type == "Warmup":
+            reply += f"  • Riscaldamento: {dur}min\n"
+        elif seg_type == "Cooldown":
+            reply += f"  • Defaticamento: {dur}min\n"
+        elif seg_type == "SteadyState":
+            pwr = round(float(seg.get("power", 0.70)) * ftp)
+            reply += f"  • Steady state: {dur}min @ ~{pwr}W\n"
+
+    await update.message.reply_text(reply, parse_mode="Markdown")
 
 
 def _upsert_health(db, user_id: str, data: dict):

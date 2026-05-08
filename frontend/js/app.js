@@ -5,8 +5,12 @@ let overviewDate = new Date().toLocaleDateString('sv-SE');
 let currentModal = null;
 let editingMealId = null;
 let editingActivityId = null;
+let editingRoutineId = null;
+let editingExerciseId = null;
 const mealsCache = {};       // id → meal object
 const activitiesCache = {};  // id → activity object
+const routinesCache = {};    // id → routine object
+const exercisesCache = {};   // id → exercise object
 
 // ─── Init ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -47,6 +51,7 @@ function onTabSwitch(tab) {
   if (tab === 'overview') loadOverview();
   if (tab === 'nutrition') loadNutrition();
   if (tab === 'activities') loadActivities();
+  if (tab === 'exercises') loadExercises();
   if (tab === 'training') loadTraining();
   if (tab === 'health') loadHealth();
   if (tab === 'settings') loadSettings();
@@ -527,9 +532,16 @@ async function loadSettings() {
   setVal('settingProtein', profile.protein_goal_g);
   setVal('settingCarbs', profile.carbs_goal_g);
   setVal('settingFat', profile.fat_goal_g);
+  // Cycling profile
+  setVal('settingFtp', profile.ftp_watts || '');
+  setVal('settingCadMin', profile.target_cadence_min || '');
+  setVal('settingCadMax', profile.target_cadence_max || '');
+  const medEl = document.getElementById('settingMedical');
+  if (medEl) medEl.value = profile.medical_notes || '';
 }
 
 async function saveSettings() {
+  const medEl = document.getElementById('settingMedical');
   const data = {
     name: getVal('settingName'),
     age: parseIntOrNull2('settingAge'),
@@ -539,6 +551,10 @@ async function saveSettings() {
     protein_goal_g: parseInt(getVal('settingProtein')) || 150,
     carbs_goal_g: parseInt(getVal('settingCarbs')) || 280,
     fat_goal_g: parseInt(getVal('settingFat')) || 75,
+    ftp_watts: parseIntOrNull('settingFtp'),
+    target_cadence_min: parseIntOrNull('settingCadMin'),
+    target_cadence_max: parseIntOrNull('settingCadMax'),
+    medical_notes: medEl ? (medEl.value || null) : null,
   };
   await api.updateUser(USER_ID, data);
   alert('Impostazioni salvate ✅');
@@ -792,6 +808,174 @@ async function submitPlanAdjustment() {
   } catch(e) {
     alert('Errore: ' + e.message);
   }
+}
+
+// ─── Exercises ────────────────────────────────────────────────────
+const ROUTINE_TYPE_LABELS = { strength: 'Forza', mobility: 'Mobilità', warmup: 'Riscaldamento', cooldown: 'Defaticamento' };
+
+async function loadExercises() {
+  if (!USER_ID) return;
+  const routines = await api.getRoutines(USER_ID).catch(() => []);
+  routines.forEach(r => {
+    routinesCache[r.id] = r;
+    (r.exercises || []).forEach(e => { exercisesCache[e.id] = e; });
+  });
+  renderRoutines(routines);
+}
+
+function renderRoutines(routines) {
+  const container = document.getElementById('routinesList');
+  if (!routines || !routines.length) {
+    container.innerHTML = '<p style="color:var(--text2)">Nessuna routine. Crea la tua prima routine!</p>';
+    return;
+  }
+  container.innerHTML = routines.map(r => {
+    const exercises = r.exercises || [];
+    const typeLabel = ROUTINE_TYPE_LABELS[r.type] || r.type;
+    const exRows = exercises.length
+      ? exercises.map(e => `
+        <div style="display:flex;align-items:center;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--border)">
+          <span style="flex:1;font-size:.9rem">${esc(e.name)}</span>
+          <span style="color:var(--text2);font-size:.82rem;min-width:80px">
+            ${e.sets ? e.sets + '×' : ''}${e.reps ? esc(e.reps) : ''}${e.rest_seconds ? ' · ' + e.rest_seconds + 's' : ''}
+          </span>
+          <button class="meal-delete" onclick="openEditExerciseModal('${e.id}')" title="Modifica">✏️</button>
+          <button class="meal-delete" onclick="deleteExercise('${e.id}')" title="Elimina">🗑</button>
+        </div>`).join('')
+      : '<p style="color:var(--text2);font-size:.85rem;padding:.5rem 0">Nessun esercizio ancora.</p>';
+
+    return `
+      <div class="card" style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.5rem">
+          <div>
+            <div style="font-weight:600;font-size:1.05rem">${esc(r.name)}</div>
+            <div style="color:var(--accent);font-size:.8rem">${typeLabel}</div>
+            ${r.description ? `<div style="color:var(--text2);font-size:.82rem;margin-top:.2rem">${esc(r.description)}</div>` : ''}
+          </div>
+          <div style="display:flex;gap:.3rem">
+            <button class="btn btn-sm btn-outline" onclick="openEditRoutineModal('${r.id}')">✏️ Modifica</button>
+            <button class="btn btn-sm btn-outline" onclick="deleteRoutine('${r.id}')">🗑 Elimina</button>
+          </div>
+        </div>
+        <div style="margin-bottom:.75rem">${exRows}</div>
+        <button class="btn btn-sm btn-outline" onclick="openAddExerciseModal('${r.id}')">+ Aggiungi esercizio</button>
+      </div>
+    `;
+  }).join('');
+}
+
+function openAddRoutineModal() {
+  editingRoutineId = null;
+  setVal('routineName', '');
+  setVal('routineType', 'strength');
+  setVal('routineDescription', '');
+  const title = document.getElementById('routineModalTitle');
+  if (title) title.textContent = 'Nuova routine';
+  openModal('modalRoutine');
+}
+
+function openEditRoutineModal(id) {
+  const r = routinesCache[id];
+  if (!r) return;
+  editingRoutineId = id;
+  setVal('routineName', r.name);
+  setVal('routineType', r.type || 'strength');
+  setVal('routineDescription', r.description || '');
+  const title = document.getElementById('routineModalTitle');
+  if (title) title.textContent = 'Modifica routine';
+  openModal('modalRoutine');
+}
+
+async function saveRoutine() {
+  const name = getVal('routineName').trim();
+  if (!name) { alert('Inserisci il nome della routine'); return; }
+  const data = {
+    user_id: USER_ID,
+    name,
+    type: getVal('routineType'),
+    description: getVal('routineDescription') || null,
+  };
+  try {
+    if (editingRoutineId) {
+      await api.updateRoutine(editingRoutineId, data);
+    } else {
+      await api.addRoutine(data);
+    }
+    editingRoutineId = null;
+    closeModal();
+    loadExercises();
+  } catch(e) {
+    alert('Errore nel salvataggio: ' + e.message);
+  }
+}
+
+async function deleteRoutine(id) {
+  if (!confirm('Elimina questa routine e tutti i suoi esercizi?')) return;
+  await api.deleteRoutine(id);
+  delete routinesCache[id];
+  loadExercises();
+}
+
+function openAddExerciseModal(routineId) {
+  editingExerciseId = null;
+  setVal('exerciseName', '');
+  setVal('exerciseSets', '');
+  setVal('exerciseReps', '');
+  setVal('exerciseRest', '');
+  setVal('exerciseNotes', '');
+  setVal('exerciseRoutineId', routineId);
+  const title = document.getElementById('exerciseModalTitle');
+  if (title) title.textContent = 'Nuovo esercizio';
+  openModal('modalExercise');
+}
+
+function openEditExerciseModal(id) {
+  const e = exercisesCache[id];
+  if (!e) return;
+  editingExerciseId = id;
+  setVal('exerciseName', e.name);
+  setVal('exerciseSets', e.sets || '');
+  setVal('exerciseReps', e.reps || '');
+  setVal('exerciseRest', e.rest_seconds || '');
+  setVal('exerciseNotes', e.notes || '');
+  setVal('exerciseRoutineId', e.routine_id);
+  const title = document.getElementById('exerciseModalTitle');
+  if (title) title.textContent = 'Modifica esercizio';
+  openModal('modalExercise');
+}
+
+async function saveExercise() {
+  const name = getVal('exerciseName').trim();
+  if (!name) { alert('Inserisci il nome dell\'esercizio'); return; }
+  const routineId = getVal('exerciseRoutineId');
+  const data = {
+    routine_id: routineId,
+    user_id: USER_ID,
+    name,
+    sets: parseIntOrNull('exerciseSets'),
+    reps: getVal('exerciseReps') || null,
+    rest_seconds: parseIntOrNull('exerciseRest'),
+    notes: getVal('exerciseNotes') || null,
+  };
+  try {
+    if (editingExerciseId) {
+      await api.updateExercise(editingExerciseId, data);
+    } else {
+      await api.addExercise(data);
+    }
+    editingExerciseId = null;
+    closeModal();
+    loadExercises();
+  } catch(e) {
+    alert('Errore nel salvataggio: ' + e.message);
+  }
+}
+
+async function deleteExercise(id) {
+  if (!confirm('Elimina questo esercizio?')) return;
+  await api.deleteExercise(id);
+  delete exercisesCache[id];
+  loadExercises();
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────

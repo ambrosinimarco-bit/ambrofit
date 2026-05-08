@@ -1,0 +1,15 @@
+ALTER TABLE user_profiles
+  ADD COLUMN IF NOT EXISTS ftp_watts INT,
+  ADD COLUMN IF NOT EXISTS power_zone_1_max INT,
+  ADD COLUMN IF NOT EXISTS power_zone_2_max INT,
+  ADD COLUMN IF NOT EXISTS power_zone_3_max INT,
+  ADD COLUMN IF NOT EXISTS power_zone_4_max INT,
+  ADD COLUMN IF NOT EXISTS target_cadence_min INT,
+  ADD COLUMN IF NOT EXISTS target_cadence_max INT,
+  ADD COLUMN IF NOT EXISTS medical_notes TEXT,
+  ADD COLUMN IF NOT EXISTS coaching_notes TEXT;
+
+ALTER TABLE activities
+  ADD COLUMN IF NOT EXISTS rpe INT,
+  ADD COLUMN IF NOT EXISTS physical_notes TEXT,
+  ADD COLUMN IF NOT EXISTS check_in_done BOOLEAN DEFAULT FALSE;

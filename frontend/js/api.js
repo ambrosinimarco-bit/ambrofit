@@ -51,4 +51,13 @@ const api = {
 
   // Strava
   syncStrava:     (uid) => apiFetch(`/api/strava/sync/${uid}`, { method: 'POST' }),
+
+  // Exercises
+  getRoutines:    (uid) => apiFetch(`/api/exercises/?user_id=${uid}`),
+  addRoutine:     (data) => apiFetch('/api/exercises/routines', { method: 'POST', body: data }),
+  updateRoutine:  (id, data) => apiFetch(`/api/exercises/routines/${id}`, { method: 'PUT', body: data }),
+  deleteRoutine:  (id) => apiFetch(`/api/exercises/routines/${id}`, { method: 'DELETE' }),
+  addExercise:    (data) => apiFetch('/api/exercises/', { method: 'POST', body: data }),
+  updateExercise: (id, data) => apiFetch(`/api/exercises/${id}`, { method: 'PUT', body: data }),
+  deleteExercise: (id) => apiFetch(`/api/exercises/${id}`, { method: 'DELETE' }),
 };
