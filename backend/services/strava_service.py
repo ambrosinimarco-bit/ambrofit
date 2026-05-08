@@ -92,6 +92,9 @@ def _map_activity(act: dict, user_id: str) -> dict:
     activity_type = SPORT_TYPE_MAP.get(sport, "other")
     start_dt = datetime.fromisoformat(act["start_date_local"].replace("Z", ""))
 
+    def _to_int(val):
+        return int(round(val)) if val is not None else None
+
     return {
         "user_id": user_id,
         "activity_date": start_dt.date().isoformat(),
@@ -100,9 +103,9 @@ def _map_activity(act: dict, user_id: str) -> dict:
         "duration_min": round(act.get("moving_time", 0) / 60, 1),
         "distance_km": round(act.get("distance", 0) / 1000, 2) if act.get("distance") else None,
         "elevation_m": act.get("total_elevation_gain"),
-        "calories": act.get("calories") or act.get("kilojoules"),
-        "avg_heart_rate": act.get("average_heartrate"),
-        "max_heart_rate": act.get("max_heartrate"),
+        "calories": act.get("calories") or None,
+        "avg_heart_rate": _to_int(act.get("average_heartrate")),
+        "max_heart_rate": _to_int(act.get("max_heartrate")),
         "strava_id": str(act["id"]),
         "source": "strava",
     }
@@ -128,12 +131,15 @@ async def sync_recent_activities(user_id: str, days: int = 30) -> list[dict]:
 
     imported = []
     for act in activities:
-        mapped = _map_activity(act, user_id)
-        existing = db.table("activities").select("id").eq("strava_id", str(act["id"])).execute()
-        if not existing.data:
-            result = db.table("activities").insert(mapped).execute()
-            if result.data:
-                imported.append(result.data[0])
+        try:
+            mapped = _map_activity(act, user_id)
+            existing = db.table("activities").select("id").eq("strava_id", str(act["id"])).execute()
+            if not existing.data:
+                result = db.table("activities").insert(mapped).execute()
+                if result.data:
+                    imported.append(result.data[0])
+        except Exception:
+            continue
 
     return imported
 
