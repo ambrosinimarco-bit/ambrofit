@@ -53,6 +53,18 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
     carbs_goal = user_data.get("carbs_goal_g", 280)
     fat_goal = user_data.get("fat_goal_g", 75)
 
+    # Weight: use today's entry; fall back to latest available measurement
+    weight_kg = health_data.get("weight_kg")
+    if weight_kg is None:
+        latest = db.table("daily_health")\
+            .select("weight_kg")\
+            .eq("user_id", user_id)\
+            .not_.is_("weight_kg", "null")\
+            .order("health_date", desc=True)\
+            .limit(1)\
+            .execute()
+        weight_kg = (latest.data or [{}])[0].get("weight_kg")
+
     return {
         "date": date_str,
         "calories_in": round(calories_in, 1),
@@ -70,7 +82,7 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
         "protein_goal_g": protein_goal,
         "carbs_goal_g": carbs_goal,
         "fat_goal_g": fat_goal,
-        "weight_kg": health_data.get("weight_kg"),
+        "weight_kg": weight_kg,
         "steps": health_data.get("steps"),
         "sleep_hours": health_data.get("sleep_hours"),
         "body_battery": health_data.get("body_battery"),

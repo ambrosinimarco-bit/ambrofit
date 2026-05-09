@@ -893,11 +893,14 @@ async function generatePlan() {
   if (!req.trim()) { alert('Descrivi il tuo obiettivo'); return; }
   closeModal();
   document.getElementById('trainingPlanHeader').innerHTML = '<p style="color:var(--text2)">⏳ Generazione piano in corso con Claude AI...</p>';
+  document.getElementById('weeklyPlanPreview').style.display = 'none';
+  _generatedPlan = null;
   try {
     await api.generatePlan(USER_ID, req);
-    loadTraining();
+    await loadTraining();
   } catch(e) {
     alert('Errore generazione piano: ' + e.message);
+    await loadTraining();
   }
 }
 
@@ -1515,15 +1518,16 @@ function downloadPlanZwos() {
 
 async function savePlanToDB() {
   if (!_generatedPlan?.sessions?.length) return;
-  const btn = event.currentTarget;
+  const btn = document.getElementById('btnSavePlan');
   btn.disabled = true;
   btn.textContent = '⏳ Salvataggio...';
   try {
     const p = _generatedPlan.period || {};
     const planName = `Piano ${_generatedPlan.sessions[0]?.type || 'allenamento'} ${p.start || ''} → ${p.end || ''}`;
     await api.saveWeeklyPlan(USER_ID, planName, _generatedPlan.sessions);
-    btn.textContent = '✅ Piano salvato!';
-    loadTraining();
+    document.getElementById('weeklyPlanPreview').style.display = 'none';
+    _generatedPlan = null;
+    await loadTraining();
   } catch (err) {
     btn.textContent = '⚠️ Errore salvataggio';
     btn.disabled = false;
