@@ -50,6 +50,12 @@ const api = {
   updateSession:  (sid, data) => apiFetch(`/api/training/session/${sid}`, { method: 'PATCH', body: data }),
   getSessions:    (uid, days=14) => apiFetch(`/api/training/sessions/${uid}?days=${days}`),
 
+  // Chat / Coach
+  coachChat: (uid, message, history) => apiFetch('/api/chat/coach', {
+    method: 'POST',
+    body: { user_id: uid, message, session_history: history },
+  }),
+
   // Strava
   syncStrava:       (uid) => apiFetch(`/api/strava/sync/${uid}`, { method: 'POST' }),
   resyncAllStrava:  (uid, days=90) => apiFetch(`/api/strava/resync-all/${uid}?days=${days}`, { method: 'POST' }),

@@ -17,6 +17,7 @@
       </div>
       <ul class="nav-links">
         <li><a href="#" class="nav-item active" data-tab="overview"><span>📊</span> Panoramica</a></li>
+        <li><a href="#" class="nav-item nav-coach" data-tab="coach"><span>🤖</span> Coach</a></li>
         <li><a href="#" class="nav-item" data-tab="nutrition"><span>🍽</span> Nutrizione</a></li>
         <li><a href="#" class="nav-item" data-tab="activities"><span>🏃</span> Attività</a></li>
         <li><a href="#" class="nav-item" data-tab="forma"><span>📈</span> Forma</a></li>
@@ -124,6 +125,7 @@
         <!-- Activity summary -->
         <div class="section-title">Attività questa settimana</div>
         <div id="weeklyActivities" class="activities-list"></div>
+        <button class="btn-coach" onclick="openCoachWithMessage('Analizza la mia giornata di oggi: nutrizione, attività e bilancio calorico. Dammi un feedback e suggerimenti.')">💬 Chiedi al coach</button>
       </section>
 
       <!-- ── TAB: Obiettivi ── -->
@@ -208,6 +210,7 @@
         <div class="meal-groups" id="mealGroups"></div>
 
         <button class="btn btn-primary btn-block" onclick="openAddMealModal()">+ Aggiungi pasto</button>
+        <button class="btn-coach" onclick="openCoachWithMessage('Analizza la mia nutrizione di oggi: sono nei target di calorie, proteine, carboidrati e grassi? Cosa miglioreresti?')">💬 Chiedi al coach</button>
       </section>
 
       <!-- ── TAB: Attività ── -->
@@ -215,6 +218,7 @@
         <div class="page-title">Attività fisiche</div>
         <div id="activitiesList" class="activities-full-list"></div>
         <button class="btn btn-primary btn-block" onclick="openAddActivityModal()">+ Registra attività</button>
+        <button class="btn-coach" onclick="openCoachWithMessage('Analizza le mie attività recenti: volume, intensità, distribuzione delle zone. Sto gestendo bene il carico di allenamento?')">💬 Chiedi al coach</button>
       </section>
 
       <!-- ── TAB: Forma & Affaticamento ── -->
@@ -258,6 +262,27 @@
           <h3>RPE vs Potenza</h3>
           <p class="chart-subtitle">Stessa fatica, più watt = miglioramento. Punti colorati = recenti.</p>
           <div class="chart-wrap"><canvas id="chartRpePower"></canvas></div>
+        </div>
+        <button class="btn-coach" style="margin-top:1rem" onclick="openCoachWithMessage('Analizza la mia forma attuale: CTL, ATL e TSB. Come mi sto adattando? Sono pronto per aumentare il carico o ho bisogno di recupero?')">💬 Chiedi al coach</button>
+      </section>
+
+      <!-- ── TAB: Coach ── -->
+      <section class="tab-content" id="tab-coach">
+        <div class="page-title">Coach AI</div>
+        <div class="coach-wrap">
+          <div class="coach-messages" id="coachMessages">
+            <div class="chat-msg coach-msg">
+              <div class="chat-bubble">Ciao! Sono il tuo coach personale. Posso analizzare allenamenti, nutrizione, forma fisica e salute per darti consigli personalizzati. Come posso aiutarti oggi?</div>
+            </div>
+          </div>
+          <div class="coach-typing" id="coachTyping" style="display:none">
+            <div class="typing-indicator"><span></span><span></span><span></span></div>
+            <span>Coach sta scrivendo...</span>
+          </div>
+          <div class="coach-input-row">
+            <textarea id="coachInput" class="coach-textarea" placeholder="Scrivi un messaggio..." rows="2" onkeydown="coachKeyDown(event)"></textarea>
+            <button class="btn btn-primary coach-send-btn" onclick="sendCoachMessage()" id="coachSendBtn">Invia</button>
+          </div>
         </div>
       </section>
 
@@ -353,6 +378,7 @@
             <canvas id="chartSleep"></canvas>
           </div>
         </div>
+        <button class="btn-coach" style="margin-top:.75rem" onclick="openCoachWithMessage('Analizza i miei dati salute recenti: peso, sonno, stress e HRV. Noti trend preoccupanti o positivi? Cosa mi consigli?')">💬 Chiedi al coach</button>
       </section>
 
       <!-- ── TAB: Impostazioni ── -->

@@ -283,17 +283,16 @@ Obiettivi: {coaching}
     return _IDENTITY + "\n\n" + context
 
 
-# ── Entry point ────────────────────────────────────────────────────────────────
+# ── Shared data fetching ───────────────────────────────────────────────────────
 
-async def get_coach_response(user_id: str, message: str) -> str:
-    """Genera risposta di coaching con contesto completo e memoria della sessione."""
+async def _build_coach_prompt(user_id: str) -> str:
+    """Recupera tutti i dati dal DB e costruisce il system prompt completo."""
     db = get_supabase()
     today_str = date.today().isoformat()
     since_30 = (date.today() - timedelta(days=30)).isoformat()
     since_14 = (date.today() - timedelta(days=14)).isoformat()
     since_7  = (date.today() - timedelta(days=7)).isoformat()
 
-    # ── Fetch dati ──────────────────────────────────────────────────────────────
     profile_res = db.table("user_profiles").select("*").eq("id", user_id).limit(1).execute()
     profile = (profile_res.data or [{}])[0]
 
@@ -315,36 +314,49 @@ async def get_coach_response(user_id: str, message: str) -> str:
         .gte("health_date", since_30).order("health_date").execute()
     weight_records = [h for h in (weight_res.data or []) if h.get("weight_kg")]
 
-    # ── Aggrega ─────────────────────────────────────────────────────────────────
     meals_by_day: dict = defaultdict(list)
     for m in meals:
         meals_by_day[m.get("meal_date", "")].append(m)
-
     health_by_day: dict = {h.get("health_date"): h for h in health_records}
 
-    # ── System prompt con snapshot completo ─────────────────────────────────────
-    system_prompt = _build_system_prompt(
+    return _build_system_prompt(
         profile, activities, health_records, weight_records,
         meals_by_day, health_by_day, today_str,
     )
 
-    # ── Sessione conversazionale ─────────────────────────────────────────────────
-    history = _get_active_session(user_id)
 
-    # Costruisci array messaggi: storia precedente + messaggio corrente
-    messages = [{"role": m["role"], "content": m["content"]} for m in history]
-    messages.append({"role": "user", "content": message})
-
-    # ── Chiamata Claude ─────────────────────────────────────────────────────────
+def _call_claude(system_prompt: str, messages: list[dict]) -> str:
     response = client.messages.create(
         model="claude-opus-4-7",
         max_tokens=1500,
         system=system_prompt,
         messages=messages,
     )
-    reply = response.content[0].text
+    return response.content[0].text
 
-    # Salva lo scambio nella sessione
+
+# ── Entry points ───────────────────────────────────────────────────────────────
+
+async def get_coach_response(user_id: str, message: str) -> str:
+    """Telegram: usa le sessioni in memoria (2 ore di continuità)."""
+    system_prompt = await _build_coach_prompt(user_id)
+
+    history = _get_active_session(user_id)
+    messages = [{"role": m["role"], "content": m["content"]} for m in history]
+    messages.append({"role": "user", "content": message})
+
+    reply = _call_claude(system_prompt, messages)
     _save_exchange(user_id, message, reply)
-
     return reply
+
+
+async def get_coach_response_web(
+    user_id: str,
+    message: str,
+    history: list[dict],
+) -> str:
+    """Web dashboard: la sessione è gestita dal frontend, qui si usa direttamente."""
+    system_prompt = await _build_coach_prompt(user_id)
+    messages = list(history)          # [{role, content}, ...]
+    messages.append({"role": "user", "content": message})
+    return _call_claude(system_prompt, messages)

@@ -57,6 +57,7 @@ function onTabSwitch(tab) {
   if (tab === 'health') loadHealth();
   if (tab === 'settings') loadSettings();
   if (tab === 'goals') loadGoals();
+  if (tab === 'coach') loadCoach();
 }
 
 async function refreshAll() {
@@ -1377,6 +1378,83 @@ function renderRpePowerChart(rides) {
       },
     },
   });
+}
+
+// ─── Coach ────────────────────────────────────────────────────────
+let coachSessionHistory = [];
+
+function loadCoach() {
+  // Welcome message already in HTML; nothing to load from server
+}
+
+function coachKeyDown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendCoachMessage();
+  }
+}
+
+async function sendCoachMessage() {
+  const input = document.getElementById('coachInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+
+  appendChatMessage('user', msg);
+  coachSessionHistory.push({ role: 'user', content: msg });
+
+  const btn = document.getElementById('coachSendBtn');
+  btn.disabled = true;
+  document.getElementById('coachTyping').style.display = 'flex';
+  document.getElementById('coachMessages').scrollTop = 999999;
+
+  try {
+    const data = await api.coachChat(USER_ID, msg, coachSessionHistory.slice(0, -1));
+    const reply = data.reply;
+    coachSessionHistory.push({ role: 'assistant', content: reply });
+    appendChatMessage('coach', reply);
+  } catch (err) {
+    appendChatMessage('coach', 'Errore di comunicazione col coach. Riprova tra un momento.');
+  } finally {
+    btn.disabled = false;
+    document.getElementById('coachTyping').style.display = 'none';
+  }
+}
+
+function appendChatMessage(role, text) {
+  const container = document.getElementById('coachMessages');
+  const div = document.createElement('div');
+  div.className = `chat-msg ${role === 'user' ? 'user-msg' : 'coach-msg'}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-bubble';
+  bubble.innerHTML = mdToHtml(text);
+  div.appendChild(bubble);
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function openCoachWithMessage(msg) {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  const coachNav = document.querySelector('[data-tab="coach"]');
+  if (coachNav) coachNav.classList.add('active');
+  document.getElementById('tab-coach').classList.add('active');
+  document.getElementById('coachInput').value = msg;
+  sendCoachMessage();
+}
+
+function mdToHtml(text) {
+  // Escape HTML first, then apply markdown-like formatting
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return escaped
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/^#{1,3} (.+)$/gm, '<strong>$1</strong>')
+    .replace(/\n/g, '<br>');
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────
