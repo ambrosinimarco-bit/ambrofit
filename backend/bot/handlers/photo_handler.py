@@ -48,23 +48,30 @@ def _extract_quantity(caption: str) -> float:
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = await get_or_create_user(update)
     caption = update.message.caption or ""
+    print(f"[photo] received from user={user_id} caption={caption!r}", flush=True)
 
     photo = update.message.photo[-1]
     photo_file = await photo.get_file()
     image_bytes = bytes(await photo_file.download_as_bytearray())
+    print(f"[photo] downloaded {len(image_bytes)} bytes", flush=True)
 
     photo_type = _detect_photo_type_from_caption(caption)
     if photo_type is None:
         await update.message.reply_text("📸 Sto analizzando la foto...")
+        print("[photo] caption ambiguous — calling Claude Haiku for classification", flush=True)
         photo_type = await asyncio.to_thread(classify_photo_type, image_bytes)
+    print(f"[photo] classified as: {photo_type}", flush=True)
 
     db = get_supabase()
     try:
         if photo_type == "garmin":
             await update.message.reply_text("📸 Analizzo lo screenshot Garmin...")
+            print(f"[photo] calling Claude for garmin analysis (user={user_id})", flush=True)
             result = await asyncio.to_thread(analyze_garmin_screenshots_batch, [image_bytes])
-            logger.info("garmin: analyzed for user=%s screen_type=%s", user_id, result.get("screen_type"))
+            print(f"[photo] Claude response received: screen_type={result.get('screen_type')}", flush=True)
+            print(f"[photo] saving to DB (user={user_id})", flush=True)
             activity_id = _save_garmin_data(db, user_id, result)
+            print(f"[photo] DB saved, activity_id={activity_id}", flush=True)
             await update.message.reply_text(_format_garmin_reply(result, db, user_id), parse_mode="Markdown")
             if result.get("avg_power_w") or result.get("duration_min"):
                 await _send_activity_report(update, db, user_id, result, activity_id)
