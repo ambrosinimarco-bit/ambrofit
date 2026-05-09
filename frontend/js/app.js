@@ -1380,6 +1380,67 @@ function renderRpePowerChart(rides) {
   });
 }
 
+// ─── ZWO Generator ────────────────────────────────────────────────
+function openZwoModal() {
+  document.getElementById('zwoPreview').style.display = 'none';
+  document.getElementById('zwoGenerateBtn').disabled = false;
+  document.getElementById('zwoGenerateBtn').textContent = '⚙️ Genera e scarica';
+  openModal('modalZwo');
+}
+
+async function generateAndDownloadZwo() {
+  const sessionType = document.getElementById('zwoSessionType').value;
+  const durationMin = parseInt(document.getElementById('zwoDuration').value);
+  const btn = document.getElementById('zwoGenerateBtn');
+  const preview = document.getElementById('zwoPreview');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Generazione in corso...';
+  preview.style.display = 'none';
+
+  try {
+    const data = await api.generateZwo(USER_ID, sessionType, durationMin);
+    const { xml, filename, workout } = data;
+
+    // Trigger download
+    const blob = new Blob([xml], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    // Show preview summary
+    const segments = workout.segments || [];
+    const ftp = 202;
+    let structureLines = segments.map(s => {
+      if (s.type === 'Warmup') return `Riscaldamento: ${s.duration_min}min`;
+      if (s.type === 'Cooldown') return `Defaticamento: ${s.duration_min}min`;
+      if (s.type === 'SteadyState') return `Steady state: ${s.duration_min}min @ ~${Math.round(s.power * ftp)}W`;
+      if (s.type === 'IntervalsT') {
+        const onW = Math.round(s.on_power * ftp);
+        const offW = Math.round(s.off_power * ftp);
+        return `${s.repeat}× ${s.on_duration_min}min @ ${onW}W / ${s.off_duration_min}min @ ${offW}W`;
+      }
+      return '';
+    }).filter(Boolean).join('<br>');
+
+    preview.innerHTML = `<strong>${workout.name}</strong><br>${structureLines}<br><br>
+      <span style="color:var(--accent)">✅ File <code>${filename}</code> scaricato.</span>`;
+    preview.style.display = 'block';
+    btn.textContent = '⚙️ Genera un altro';
+    btn.disabled = false;
+  } catch (err) {
+    preview.innerHTML = `<span style="color:var(--danger)">Errore: ${err.message}</span>`;
+    preview.style.display = 'block';
+    btn.textContent = '⚙️ Riprova';
+    btn.disabled = false;
+  }
+}
+
 // ─── Coach ────────────────────────────────────────────────────────
 let coachSessionHistory = [];
 

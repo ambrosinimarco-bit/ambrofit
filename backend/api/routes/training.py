@@ -1,4 +1,6 @@
+import asyncio
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from datetime import date
 from backend.database.client import get_supabase
 from backend.database.models import TrainingPlanCreate, TrainingSessionCreate, PlanAdjustmentRequest
@@ -46,6 +48,47 @@ def update_session(session_id: str, data: dict):
     if not result.data:
         raise HTTPException(status_code=404, detail="Sessione non trovata")
     return result.data[0]
+
+
+class ZwoGenerateRequest(BaseModel):
+    user_id: str
+    session_type: str   # recovery | base | sweetspot | tempo | vo2max
+    duration_min: int
+
+
+_SESSION_LABELS = {
+    "recovery":  "recupero Z1",
+    "base":      "base endurance Z2",
+    "sweetspot": "sweet spot",
+    "tempo":     "tempo",
+    "vo2max":    "VO2max intervalli",
+}
+
+
+@router.post("/generate-zwo")
+async def generate_zwo_endpoint(body: ZwoGenerateRequest):
+    """Genera un file .zwo per MyWhoosh e lo restituisce come contenuto XML."""
+    db = get_supabase()
+    profile_res = db.table("user_profiles").select("ftp_watts,weight_kg")\
+        .eq("id", body.user_id).limit(1).execute()
+    profile = (profile_res.data or [{}])[0]
+    ftp = profile.get("ftp_watts") or 202
+    weight_kg = float(profile.get("weight_kg") or 75.0)
+
+    label = _SESSION_LABELS.get(body.session_type, body.session_type)
+    request_text = f"sessione {label} da {body.duration_min} minuti"
+
+    from backend.services.claude_service import plan_zwo_workout
+    from backend.services.zwo_service import generate_zwo_xml, safe_filename
+
+    try:
+        workout = await asyncio.to_thread(plan_zwo_workout, request_text, ftp)
+        xml_content = generate_zwo_xml(workout, ftp, weight_kg)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    filename = safe_filename(workout.get("name", "Workout")) + ".zwo"
+    return {"xml": xml_content, "filename": filename, "workout": workout}
 
 
 @router.get("/sessions/{user_id}")

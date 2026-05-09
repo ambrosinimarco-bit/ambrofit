@@ -254,7 +254,7 @@ async def _handle_pre_condition(update, db, user_id: str, data: dict) -> None:
 async def _handle_zwo_request(update, db, user_id: str, text: str) -> None:
     """Genera e invia un file .zwo via Telegram."""
     from backend.services.claude_service import plan_zwo_workout
-    from backend.services.zwo_service import generate_zwo_xml
+    from backend.services.zwo_service import generate_zwo_xml, safe_filename
 
     # Fetch profilo utente
     profile_res = db.table("user_profiles").select("ftp_watts,weight_kg").eq("id", user_id).limit(1).execute()
@@ -269,9 +269,7 @@ async def _handle_zwo_request(update, db, user_id: str, text: str) -> None:
 
     # Nome file sicuro
     workout_name = workout.get("name", "Workout")
-    safe_name = re.sub(r'[^\w\s-]', '', workout_name).strip().replace(' ', '_')
-    if not safe_name:
-        safe_name = "Workout"
+    safe_name = safe_filename(workout_name)
 
     # Invia file .zwo
     file_bytes = io.BytesIO(xml_content.encode('utf-8'))

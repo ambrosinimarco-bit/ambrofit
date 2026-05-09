@@ -305,6 +305,7 @@
         <div class="plan-actions">
           <button class="btn btn-outline btn-sm" onclick="openNewPlanModal()">🧠 Crea piano con AI</button>
           <button class="btn btn-outline btn-sm" onclick="openAdjustPlanModal()">✏️ Segnala pausa/modifica</button>
+          <button class="btn btn-outline btn-sm" onclick="openZwoModal()">🚴 Genera sessione .zwo</button>
         </div>
 
         <div id="trainingSessions" class="sessions-grid"></div>
@@ -671,6 +672,47 @@
       <div style="flex:1"></div>
       <button class="btn btn-outline" onclick="closeModal()">Chiudi</button>
       <button class="btn btn-primary" id="actDetailEditBtn">✏️ Modifica</button>
+    </div>
+  </div>
+
+  <!-- .ZWO Generator Modal -->
+  <div class="modal" id="modalZwo">
+    <div class="modal-header">
+      <h3>🚴 Genera sessione .zwo</h3>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--text2);font-size:.85rem;margin-bottom:1.25rem">
+        Il file generato è pronto per MyWhoosh Workout Builder.<br>
+        <strong>Ricorda:</strong> dopo l'import correggi FTP a 202W e peso a 75kg prima di salvare su MyWhoosh.
+      </p>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Tipo sessione</label>
+          <select id="zwoSessionType">
+            <option value="recovery">🟢 Recupero Z1 (50-56% FTP)</option>
+            <option value="base">🔵 Base endurance Z2 (56-75% FTP)</option>
+            <option value="sweetspot" selected>🟡 Sweet Spot (84-95% FTP)</option>
+            <option value="tempo">🟠 Tempo (76-90% FTP)</option>
+            <option value="vo2max">🔴 VO2max (106-120% FTP)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Durata</label>
+          <select id="zwoDuration">
+            <option value="30">30 minuti</option>
+            <option value="45" selected>45 minuti</option>
+            <option value="60">60 minuti</option>
+            <option value="75">75 minuti</option>
+            <option value="90">90 minuti</option>
+          </select>
+        </div>
+      </div>
+      <div id="zwoPreview" style="display:none;margin-top:1rem;padding:.85rem 1rem;background:var(--bg3);border-radius:8px;font-size:.85rem;line-height:1.6"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
+      <button class="btn btn-primary" onclick="generateAndDownloadZwo()" id="zwoGenerateBtn">⚙️ Genera e scarica</button>
     </div>
   </div>
 

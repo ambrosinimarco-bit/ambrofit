@@ -1,6 +1,18 @@
 """ZWO service: genera file .zwo compatibili con MyWhoosh/Zwift."""
+import re
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
+
+_AUTO_NOTE = (
+    "⚠️ Importare in MyWhoosh Workout Builder web, "
+    "correggere FTP a 202W e peso a 75kg prima di esportare su MyWhoosh."
+)
+
+
+def safe_filename(name: str) -> str:
+    """Restituisce un nome file sicuro per il .zwo."""
+    clean = re.sub(r'[^\w\s-]', '', name).strip().replace(' ', '_')
+    return clean or "Workout"
 
 
 def generate_zwo_xml(workout: dict, ftp: int, weight_kg: float = 75.0) -> str:
@@ -12,7 +24,8 @@ def generate_zwo_xml(workout: dict, ftp: int, weight_kg: float = 75.0) -> str:
 
     ET.SubElement(root, "author").text = "Ambrofit"
     ET.SubElement(root, "name").text = workout.get("name", "Workout")
-    ET.SubElement(root, "description").text = workout.get("description", "")
+    base_desc = workout.get("description", "")
+    ET.SubElement(root, "description").text = f"{base_desc}\n\n{_AUTO_NOTE}".strip()
     ET.SubElement(root, "sportType").text = "bike"
     ET.SubElement(root, "tags")
 
