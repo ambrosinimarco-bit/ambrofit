@@ -1,4 +1,5 @@
 """Coach service con memoria contestuale completa (30gg) e sessioni conversazionali."""
+import uuid
 import anthropic
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
@@ -12,30 +13,81 @@ client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 # ── Sessioni in memoria (max 2 ore di continuità) ──────────────────────────────
 
 SESSION_TIMEOUT = timedelta(hours=2)
-# user_id -> [{"role": "user"|"assistant", "content": str, "ts": datetime}]
-_sessions: dict[str, list[dict]] = {}
+# user_id -> {"session_id": str, "messages": [{"role", "content", "ts"}]}
+_sessions: dict[str, dict] = {}
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _get_active_session(user_id: str) -> list[dict]:
-    """Ritorna la sessione attiva; la azzera se scaduta (>2 ore dall'ultimo msg)."""
-    history = _sessions.get(user_id, [])
-    if history and (_now() - history[-1]["ts"]) > SESSION_TIMEOUT:
-        history = []
-        _sessions[user_id] = history
-    return history
+def _generate_session_id() -> str:
+    return str(uuid.uuid4())
 
 
-def _save_exchange(user_id: str, user_msg: str, assistant_msg: str) -> None:
-    history = _sessions.setdefault(user_id, [])
+def _get_active_session(user_id: str) -> tuple[list[dict], str]:
+    """Ritorna (history, session_id). Crea nuova sessione se scaduta o assente."""
+    session = _sessions.get(user_id)
+    if session:
+        msgs = session["messages"]
+        if not msgs or (_now() - msgs[-1]["ts"]) <= SESSION_TIMEOUT:
+            return msgs, session["session_id"]
+    # Nuova sessione
+    sid = _generate_session_id()
+    _sessions[user_id] = {"session_id": sid, "messages": []}
+    return [], sid
+
+
+def _save_exchange_memory(user_id: str, user_msg: str, assistant_msg: str, session_id: str) -> None:
+    if user_id not in _sessions:
+        _sessions[user_id] = {"session_id": session_id, "messages": []}
+    msgs = _sessions[user_id]["messages"]
     now = _now()
-    history.append({"role": "user",      "content": user_msg,      "ts": now})
-    history.append({"role": "assistant", "content": assistant_msg, "ts": now})
-    if len(history) > 40:  # max 20 scambi
-        _sessions[user_id] = history[-40:]
+    msgs.append({"role": "user",      "content": user_msg,      "ts": now})
+    msgs.append({"role": "assistant", "content": assistant_msg, "ts": now})
+    if len(msgs) > 40:
+        _sessions[user_id]["messages"] = msgs[-40:]
+
+
+# ── Persistenza DB ─────────────────────────────────────────────────────────────
+
+def _save_exchange_db(user_id: str, session_id: str, user_msg: str, assistant_msg: str) -> None:
+    """Salva lo scambio nel database (fire-and-forget, non bloccante sul caller)."""
+    try:
+        db = get_supabase()
+        db.table("coach_conversations").insert([
+            {"user_id": user_id, "session_id": session_id, "role": "user",      "message": user_msg},
+            {"user_id": user_id, "session_id": session_id, "role": "assistant", "message": assistant_msg},
+        ]).execute()
+    except Exception:
+        pass  # non interrompere il flusso se il salvataggio fallisce
+
+
+def _load_history_db(
+    user_id: str,
+    exclude_session_id: str | None = None,
+    days: int = 7,
+    limit: int = 20,
+) -> list[dict]:
+    """Carica messaggi recenti dal DB, esclusa la sessione corrente."""
+    try:
+        db = get_supabase()
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        q = (
+            db.table("coach_conversations")
+            .select("role,message,session_id,created_at")
+            .eq("user_id", user_id)
+            .gte("created_at", since)
+            .order("created_at", desc=True)
+            .limit(limit)
+        )
+        if exclude_session_id:
+            q = q.neq("session_id", exclude_session_id)
+        rows = q.execute().data or []
+        rows.sort(key=lambda r: r.get("created_at") or "")
+        return [{"role": r["role"], "content": r["message"]} for r in rows]
+    except Exception:
+        return []
 
 
 # ── Costruzione sezioni contesto ───────────────────────────────────────────────
@@ -224,6 +276,17 @@ Per analisi forma/affaticamento:
 """
 
 
+def _fmt_db_history(history: list[dict]) -> str:
+    if not history:
+        return ""
+    lines = []
+    for m in history:
+        label = "Marco" if m["role"] == "user" else "Coach"
+        content = m["content"].replace("\n", " ")[:400]
+        lines.append(f"[{label}]: {content}")
+    return "\n".join(lines)
+
+
 def _build_system_prompt(
     profile: dict,
     activities: list,
@@ -232,6 +295,7 @@ def _build_system_prompt(
     meals_by_day: dict,
     health_by_day: dict,
     today_str: str,
+    db_history: list[dict] | None = None,
 ) -> str:
     ftp    = profile.get("ftp_watts") or 202
     z1     = profile.get("power_zone_1_max") or 121
@@ -280,12 +344,15 @@ Obiettivi: {coaching}
 {_fmt_health(health_records)}
 """
 
+    if db_history:
+        context += f"\n\n━━━ CONVERSAZIONI RECENTI (ultimi 7 giorni) ━━━\n{_fmt_db_history(db_history)}"
+
     return _IDENTITY + "\n\n" + context
 
 
 # ── Shared data fetching ───────────────────────────────────────────────────────
 
-async def _build_coach_prompt(user_id: str) -> str:
+async def _build_coach_prompt(user_id: str, exclude_session_id: str | None = None) -> str:
     """Recupera tutti i dati dal DB e costruisce il system prompt completo."""
     db = get_supabase()
     today_str = date.today().isoformat()
@@ -319,9 +386,12 @@ async def _build_coach_prompt(user_id: str) -> str:
         meals_by_day[m.get("meal_date", "")].append(m)
     health_by_day: dict = {h.get("health_date"): h for h in health_records}
 
+    db_history = _load_history_db(user_id, exclude_session_id=exclude_session_id)
+
     return _build_system_prompt(
         profile, activities, health_records, weight_records,
         meals_by_day, health_by_day, today_str,
+        db_history=db_history,
     )
 
 
@@ -338,15 +408,16 @@ def _call_claude(system_prompt: str, messages: list[dict]) -> str:
 # ── Entry points ───────────────────────────────────────────────────────────────
 
 async def get_coach_response(user_id: str, message: str) -> str:
-    """Telegram: usa le sessioni in memoria (2 ore di continuità)."""
-    system_prompt = await _build_coach_prompt(user_id)
+    """Telegram: usa le sessioni in memoria (2 ore di continuità) + storico DB."""
+    history, session_id = _get_active_session(user_id)
+    system_prompt = await _build_coach_prompt(user_id, exclude_session_id=session_id)
 
-    history = _get_active_session(user_id)
     messages = [{"role": m["role"], "content": m["content"]} for m in history]
     messages.append({"role": "user", "content": message})
 
     reply = _call_claude(system_prompt, messages)
-    _save_exchange(user_id, message, reply)
+    _save_exchange_memory(user_id, message, reply, session_id)
+    _save_exchange_db(user_id, session_id, message, reply)
     return reply
 
 
@@ -354,9 +425,15 @@ async def get_coach_response_web(
     user_id: str,
     message: str,
     history: list[dict],
-) -> str:
-    """Web dashboard: la sessione è gestita dal frontend, qui si usa direttamente."""
-    system_prompt = await _build_coach_prompt(user_id)
-    messages = list(history)          # [{role, content}, ...]
+    session_id: str | None = None,
+) -> tuple[str, str]:
+    """Web dashboard: sessione gestita dal frontend. Ritorna (reply, session_id)."""
+    if not session_id:
+        session_id = _generate_session_id()
+
+    system_prompt = await _build_coach_prompt(user_id, exclude_session_id=session_id)
+    messages = list(history)
     messages.append({"role": "user", "content": message})
-    return _call_claude(system_prompt, messages)
+    reply = _call_claude(system_prompt, messages)
+    _save_exchange_db(user_id, session_id, message, reply)
+    return reply, session_id

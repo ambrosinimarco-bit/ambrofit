@@ -55,10 +55,11 @@ const api = {
   }),
 
   // Chat / Coach
-  coachChat: (uid, message, history) => apiFetch('/api/chat/coach', {
+  coachChat: (uid, message, history, sessionId) => apiFetch('/api/chat/coach', {
     method: 'POST',
-    body: { user_id: uid, message, session_history: history },
+    body: { user_id: uid, message, session_history: history, session_id: sessionId || null },
   }),
+  getCoachHistory: (uid, days = 7) => apiFetch(`/api/chat/history/${uid}?days=${days}`),
 
   // Strava
   syncStrava:       (uid) => apiFetch(`/api/strava/sync/${uid}`, { method: 'POST' }),

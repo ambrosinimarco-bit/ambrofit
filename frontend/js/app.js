@@ -1443,9 +1443,11 @@ async function generateAndDownloadZwo() {
 
 // ─── Coach ────────────────────────────────────────────────────────
 let coachSessionHistory = [];
+let coachSessionId = null;
+let coachHistoryOpen = false;
 
 function loadCoach() {
-  // Welcome message already in HTML; nothing to load from server
+  // Welcome message is static HTML; session state persists in-tab
 }
 
 function coachKeyDown(e) {
@@ -1462,6 +1464,8 @@ async function sendCoachMessage() {
   input.value = '';
 
   appendChatMessage('user', msg);
+  // History sent excludes the message we just appended
+  const historyToSend = coachSessionHistory.slice();
   coachSessionHistory.push({ role: 'user', content: msg });
 
   const btn = document.getElementById('coachSendBtn');
@@ -1470,8 +1474,9 @@ async function sendCoachMessage() {
   document.getElementById('coachMessages').scrollTop = 999999;
 
   try {
-    const data = await api.coachChat(USER_ID, msg, coachSessionHistory.slice(0, -1));
+    const data = await api.coachChat(USER_ID, msg, historyToSend, coachSessionId);
     const reply = data.reply;
+    coachSessionId = data.session_id || coachSessionId;
     coachSessionHistory.push({ role: 'assistant', content: reply });
     appendChatMessage('coach', reply);
   } catch (err) {
@@ -1502,6 +1507,53 @@ function openCoachWithMessage(msg) {
   document.getElementById('tab-coach').classList.add('active');
   document.getElementById('coachInput').value = msg;
   sendCoachMessage();
+}
+
+async function toggleCoachHistory() {
+  const panel = document.getElementById('coachHistoryPanel');
+  const btn = document.getElementById('btnCoachHistory');
+  coachHistoryOpen = !coachHistoryOpen;
+  panel.style.display = coachHistoryOpen ? 'flex' : 'none';
+  btn.textContent = coachHistoryOpen ? '✕ Chiudi storico' : '📋 Storico';
+  if (coachHistoryOpen) await loadCoachHistory();
+}
+
+async function loadCoachHistory() {
+  const list = document.getElementById('coachHistoryList');
+  list.innerHTML = '<span style="padding:.75rem 1rem;font-size:.8rem;color:var(--text2);display:block">Caricamento...</span>';
+  try {
+    const sessions = await api.getCoachHistory(USER_ID, 7);
+    if (!sessions.length) {
+      list.innerHTML = '<span style="padding:.75rem 1rem;font-size:.8rem;color:var(--text2);display:block">Nessuna conversazione negli ultimi 7 giorni.</span>';
+      return;
+    }
+    list.innerHTML = sessions.map(s => {
+      const dateLabel = new Date(s.date + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
+      const firstUser = s.messages.find(m => m.role === 'user');
+      const preview = firstUser ? firstUser.content.slice(0, 60) + (firstUser.content.length > 60 ? '…' : '') : '';
+      const msgCount = s.messages.length;
+      return `<div class="history-session" onclick="loadHistorySession(${JSON.stringify(s.messages).replace(/"/g, '&quot;')})">
+        <div class="history-session-date">${dateLabel}</div>
+        <div class="history-session-preview">${esc(preview)}</div>
+        <div class="history-session-count">${msgCount} messaggi</div>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    list.innerHTML = '<span style="padding:.75rem 1rem;font-size:.8rem;color:var(--danger);display:block">Errore nel caricamento storico.</span>';
+  }
+}
+
+function loadHistorySession(messages) {
+  const container = document.getElementById('coachMessages');
+  // Keep the welcome bubble, remove everything after
+  const welcome = container.querySelector('.coach-msg');
+  container.innerHTML = '';
+  if (welcome) container.appendChild(welcome);
+
+  messages.forEach(m => appendChatMessage(m.role === 'user' ? 'user' : 'coach', m.content));
+  // Reset session so next message starts fresh
+  coachSessionHistory = [];
+  coachSessionId = null;
 }
 
 function mdToHtml(text) {
