@@ -243,6 +243,50 @@ ESEMPI DI CLASSIFICAZIONE CORRETTA:
     return json.loads(response.content[0].text)
 
 
+def _parse_claude_json(response, prompt: str, system: str) -> dict:
+    """
+    Parsing robusto del JSON da una risposta Claude:
+    1. Strip code fence markdown (```json ... ```)
+    2. json.loads
+    3. Se troncato (stop_reason=max_tokens), secondo tentativo con continuation
+    """
+    import json
+
+    def _strip_fences(text: str) -> str:
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.split("```", 2)[1]
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.rstrip("`").strip()
+        return text
+
+    raw = _strip_fences(response.content[0].text)
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        if response.stop_reason != "max_tokens":
+            raise
+        # Secondo tentativo: chiediamo a Claude di completare il JSON troncato
+        cont = client.messages.create(
+            model="claude-opus-4-7",
+            max_tokens=4000,
+            system=system,
+            messages=[
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": response.content[0].text},
+                {"role": "user", "content": (
+                    "Il JSON è stato troncato. Continua esattamente da dove ti sei "
+                    "fermato, senza ripetere niente — solo la parte mancante fino "
+                    "alla chiusura dell'oggetto JSON principale."
+                )},
+            ],
+        )
+        combined = _strip_fences(raw + cont.content[0].text.strip())
+        return json.loads(combined)
+
+
 def generate_training_plan(user_profile: dict, request: str) -> dict:
     """Genera un piano di allenamento personalizzato."""
     prompt = f"""Crea un piano di allenamento personalizzato.
@@ -276,12 +320,11 @@ Rispondi con JSON esatto:
 
     response = client.messages.create(
         model="claude-opus-4-7",
-        max_tokens=4096,
+        max_tokens=8000,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
-    import json
-    return json.loads(response.content[0].text)
+    return _parse_claude_json(response, prompt, SYSTEM_PROMPT)
 
 
 def adjust_training_plan(plan_context: dict, adjustment_reason: str) -> dict:
@@ -305,12 +348,11 @@ Analizza la situazione e rispondi con JSON:
 
     response = client.messages.create(
         model="claude-opus-4-7",
-        max_tokens=1024,
+        max_tokens=2000,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
-    import json
-    return json.loads(response.content[0].text)
+    return _parse_claude_json(response, prompt, SYSTEM_PROMPT)
 
 
 def suggest_exercises(user_profile: dict, available_time_min: int = 45) -> dict:
