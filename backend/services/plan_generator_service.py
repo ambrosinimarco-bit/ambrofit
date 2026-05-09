@@ -275,6 +275,65 @@ def _get_period_dates(period: str) -> tuple[date, date]:
     return start, end
 
 
+# ── Post-processing: enforce hard constraints in Python ───────────────────────
+
+_RIDE_TYPES = {"base", "long", "sweetspot", "tempo", "vo2max", "recovery"}
+_WEEKEND = {"saturday", "sunday"}
+
+
+def _post_process_sessions(
+    sessions: list[dict],
+    available_days: list[str] | None,
+    post_long_date: str | None,
+) -> list[dict]:
+    """Enforce hard constraints after Claude generates the plan."""
+    for s in sessions:
+        date_str = s.get("date", "")
+        try:
+            d = date.fromisoformat(date_str)
+        except (ValueError, TypeError):
+            continue
+
+        day_en = _DAY_EN[d.weekday()]
+
+        # 1. Available days: non-allowed days become rest
+        if available_days and day_en not in available_days:
+            s["type"] = "rest"
+            s["name"] = "Riposo"
+            s["description"] = ""
+            s["segments"] = None
+            s["exercises"] = None
+            s["duration_min"] = 0
+            continue
+
+        if s.get("type") == "rest":
+            continue
+
+        # 2. Post-long recovery: day after 3+ hour activity = forced recovery
+        if post_long_date and date_str == post_long_date:
+            if s.get("type") not in ("rest", "recovery"):
+                s["type"] = "recovery"
+                s["name"] = "Recupero attivo"
+                s["description"] = "Recupero obbligatorio dopo uscita lunga."
+                s["segments"] = None
+                s["duration_min"] = min(int(s.get("duration_min") or 45), 45)
+            continue
+
+        # 3. Weekday rides capped at 90 min
+        if day_en not in _WEEKEND and s.get("type") in _RIDE_TYPES:
+            if int(s.get("duration_min") or 0) > 90:
+                s["duration_min"] = 90
+                segs = s.get("segments")
+                if segs:
+                    total = sum(int(seg.get("duration_min") or 0) for seg in segs)
+                    if total > 90:
+                        scale = 90 / total
+                        for seg in segs:
+                            seg["duration_min"] = max(1, round(int(seg.get("duration_min") or 1) * scale))
+
+    return sessions
+
+
 # ── Main entry point ─────────────────────────────────────────────────────────
 
 def generate_weekly_plan(
@@ -296,13 +355,14 @@ def generate_weekly_plan(
     coaching = profile.get("coaching_notes") or "ciclista endurance 53 anni, 2-3 sessioni/settimana"
 
     # Recent activities for TSB
-    since_90 = (date.today() - timedelta(days=90)).isoformat()
+    today = date.today()
+    since_90 = (today - timedelta(days=90)).isoformat()
     acts = db.table("activities").select(
         "activity_date,duration_min,avg_power_w,normalized_power_w,avg_heart_rate"
     ).eq("user_id", user_id).gte("activity_date", since_90).execute().data or []
     ctl, atl, tsb = _calc_fitness(acts, ftp)
 
-    # Extract event/days from free-text notes (priority over UI fields)
+    # Extract event/days from free-text notes (priority over UI fields) — Python handles this
     if user_notes:
         extracted_name, extracted_date = _extract_event_from_notes(user_notes)
         if not target_event_name:
@@ -312,91 +372,48 @@ def generate_weekly_plan(
         if not available_days:
             available_days = _extract_days_from_notes(user_notes) or None
 
-    # Post-long-ride detection: if 3+ hour activity in last 2 days, next day = rest/recovery
-    today = date.today()
+    # Detect post-long-ride day to enforce in post-processing
+    post_long_date: str | None = None
     since_2days = (today - timedelta(days=2)).isoformat()
     recent_acts = db.table("activities").select("activity_date,duration_min")\
         .eq("user_id", user_id).gte("activity_date", since_2days).execute().data or []
-    post_long_block = ""
     for a in recent_acts:
         if float(a.get("duration_min") or 0) >= 180:
             act_date = a.get("activity_date", "")
             if act_date == today.isoformat():
-                restrict_date = (today + timedelta(days=1)).isoformat()
-                post_long_block = (
-                    f"\n⚠️ POST-LUNGO: attività di 3+ ore OGGI ({act_date}). "
-                    f"Il giorno {restrict_date} DEVE essere type='rest' o recupero Z1 MAX 45min. "
-                    "Nessuna sessione intensa.\n"
-                )
+                post_long_date = (today + timedelta(days=1)).isoformat()
             elif act_date == (today - timedelta(days=1)).isoformat():
-                restrict_date = today.isoformat()
-                post_long_block = (
-                    f"\n⚠️ POST-LUNGO: attività di 3+ ore IERI ({act_date}). "
-                    f"Il giorno {restrict_date} DEVE essere type='rest' o recupero Z1 MAX 45min. "
-                    "Nessuna sessione intensa.\n"
-                )
-            break  # first long ride found is enough
+                post_long_date = today.isoformat()
+            break
 
     # Period
     start_date, end_date = _get_period_dates(period)
 
-    # Available days → hard constraint
-    if available_days:
-        avail_it = [_DAY_IT[_DAY_EN.index(d)] for d in available_days if d in _DAY_EN]
-        avail_block = (
-            f"\n🔒 VINCOLO RIGIDO GIORNI DISPONIBILI: le sessioni di allenamento sono CONSENTITE "
-            f"SOLO nei giorni: {', '.join(avail_it)}.\n"
-            "Tutti gli altri giorni DEVONO avere type=\"rest\" OBBLIGATORIAMENTE — "
-            "anche se sarebbe utile allenarsi. Non ci sono eccezioni.\n"
-        )
-    else:
-        avail_it = _DAY_IT
-        avail_block = ""
-
-    # Build date list
+    # Build date list for Claude
     date_list, d = [], start_date
     while d <= end_date:
         date_list.append(f"{_DAY_IT[d.weekday()]} {d.isoformat()}")
         d += timedelta(days=1)
 
-    user_notes_block = (
-        f"\n⚠️ ISTRUZIONI PRIORITARIE DELL'UTENTE (sovrascrivono ogni altra regola):\n{user_notes}\n"
-        if user_notes and user_notes.strip() else ""
+    target_block = (
+        f"\nEvento target: \"{target_event_name}\" il {target_event_date} "
+        "(calibra il carico per arrivare riposato)."
+        if target_event_name and target_event_date else ""
     )
+    notes_block = f"\nNote aggiuntive: {user_notes}" if user_notes and user_notes.strip() else ""
 
-    target_block = ""
-    if target_event_name and target_event_date:
-        target_block = (
-            f"\n⚠️ EVENTO TARGET: \"{target_event_name}\" il {target_event_date}\n"
-            "CRITICO: usa ESATTAMENTE questa data nel tuo ragionamento — non modificarla né ricalcolarla.\n"
-            "Gestisci il carico in modo da arrivare all'evento con TSB positivo (+5/+15).\n"
-        )
+    # ── Chiamata 1: genera il piano (struttura + segmenti ZWO, senza esercizi) ──
+    prompt = f"""Genera un piano settimanale di allenamento per un ciclista in formato JSON.
 
-    # ── Chiamata 1: struttura del piano (senza dettaglio esercizi) ──────────────
-    prompt = f"""Crea un piano di allenamento ciclismo per Marco.
-{user_notes_block}{avail_block}{post_long_block}
 PERIODO: {start_date} → {end_date}
 Giorni: {", ".join(date_list)}
-Obiettivo: {objective}{target_block}
+Obiettivo: {objective}
 FTP {ftp}W | CTL {ctl} | ATL {atl} | TSB {tsb}
-Vincoli medici: {medical}
-Contesto: {coaching}
+Contesto atleta: {coaching}{target_block}{notes_block}
 
 Zone FTP: Z1=0.50-0.56 | Z2=0.56-0.75 | SS=0.84-0.95 | Tempo=0.76-0.90 | VO2max=1.06-1.20
 
-LIMITI DURATA:
-- Infrasettimanali lun-ven: MAX 75min / MAX 40km outdoor. Di norma indoor.
-- Lungo weekend: outdoor, 90-180min, 60-100km.
-- Recupero: MAX 60min. Indoor → solo duration_min, no distanza.
-
-REGOLE:
-- Una voce per OGNI giorno (riposo: type="rest", segments=null, exercises=null)
-- Indoor cycling: segments con Warmup+corpo+Cooldown (per .zwo). Riscaldamento ≥8min.
-- Outdoor cycling: segments=null
-- Sessioni strength/mobility: segments=null, exercises=null (dettaglio aggiunto dopo)
-- TSB<-10 → recupero/Z2. TSB>+10 → qualità. Rispetta vincoli medici.
-
-JSON:
+JSON (un elemento per ogni giorno del periodo):
 {{
   "sessions": [
     {{
@@ -417,7 +434,10 @@ JSON:
     }}
   ],
   "summary": "Logica del piano (2-3 frasi)"
-}}"""
+}}
+
+Sessioni indoor: includi segments (Warmup + corpo + Cooldown).
+Sessioni outdoor e strength/mobility: segments=null, exercises=null."""
 
     resp1 = client.messages.create(
         model="claude-opus-4-7",
@@ -433,6 +453,9 @@ JSON:
     plan_data = json.loads(raw1)
     sessions = plan_data.get("sessions", [])
     summary = plan_data.get("summary", "")
+
+    # ── Post-processing: enforce hard constraints deterministically ──────────
+    sessions = _post_process_sessions(sessions, available_days or None, post_long_date)
 
     # ── Chiamata 2: esercizi per sessioni strength/mobility ──────────────────
     sm_indices = [(i, s) for i, s in enumerate(sessions)
