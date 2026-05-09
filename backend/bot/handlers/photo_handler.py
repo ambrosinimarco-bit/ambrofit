@@ -3,6 +3,7 @@ import logging
 import re
 from datetime import date, timedelta
 
+print("photo_handler v2 loaded", flush=True)
 logger = logging.getLogger(__name__)
 from telegram import Update
 from telegram.ext import ContextTypes
