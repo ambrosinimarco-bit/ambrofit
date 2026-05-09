@@ -1440,8 +1440,8 @@ function renderWeeklyPlanPreview(data) {
 
   btnZwos.style.display = zwo_count > 0 ? '' : 'none';
 
-  const _ICONS = { recovery: '🟢', base: '🔵', long: '🔵', sweetspot: '🟡', tempo: '🟠', vo2max: '🔴', rest: '⬜' };
-  const _LABEL = { recovery: 'Recupero', base: 'Base Z2', long: 'Lungo Z2', sweetspot: 'Sweet Spot', tempo: 'Tempo', vo2max: 'VO2max', rest: 'Riposo' };
+  const _ICONS = { recovery: '🟢', base: '🔵', long: '🔵', sweetspot: '🟡', tempo: '🟠', vo2max: '🔴', strength: '🏋️', mobility: '🧘', rest: '⬜' };
+  const _LABEL = { recovery: 'Recupero', base: 'Base Z2', long: 'Lungo Z2', sweetspot: 'Sweet Spot', tempo: 'Tempo', vo2max: 'VO2max', strength: 'Forza', mobility: 'Mobilità', rest: 'Riposo' };
   const ftp = 202;
 
   sessionsEl.innerHTML = sessions.map((s, idx) => {
@@ -1469,13 +1469,15 @@ function renderWeeklyPlanPreview(data) {
       segSummary = `<div class="wp-segments">${segs}</div>`;
     }
     const zwoBtn = s.segments ? `<button class="wp-btn" title="Scarica .zwo" onclick="downloadSessionZwo(${idx})">🚴</button>` : '';
-    return `<div class="wp-session">
+    const exBtn = s.exercises?.length ? `<button class="wp-btn" title="Vedi esercizi" onclick="showExerciseDetail(${idx})">📋 Esercizi</button>` : '';
+    const typeClass = type === 'strength' ? ' wp-strength' : type === 'mobility' ? ' wp-mobility' : '';
+    return `<div class="wp-session${typeClass}">
       <div class="wp-day">${s.day_name || ''} <span class="wp-date">${s.date || ''}</span></div>
       <div class="wp-type">${icon} ${label} ${indoorBadge} ${pwrLine}</div>
       <div class="wp-name">${esc(s.name || '')}</div>
       <div class="wp-desc">${esc(s.description || '')}</div>
       ${segSummary}
-      <div class="wp-actions">${zwoBtn}<button class="wp-btn" onclick="editSessionCard(${idx})">✏️</button><button class="wp-btn wp-btn-del" onclick="deleteSessionCard(${idx})">🗑️</button></div>
+      <div class="wp-actions">${exBtn}${zwoBtn}<button class="wp-btn" onclick="editSessionCard(${idx})">✏️</button><button class="wp-btn wp-btn-del" onclick="deleteSessionCard(${idx})">🗑️</button></div>
     </div>`;
   }).join('');
 
@@ -1580,6 +1582,35 @@ async function downloadSessionZwo(idx) {
   } catch (err) {
     alert('Errore generazione .zwo: ' + err.message);
   }
+}
+
+function showExerciseDetail(idx) {
+  if (!_generatedPlan?.sessions) return;
+  const s = _generatedPlan.sessions[idx];
+  if (!s.exercises?.length) return;
+
+  document.getElementById('exerciseDetailTitle').textContent =
+    (s.type === 'mobility' ? '🧘' : '🏋️') + ' ' + (s.name || 'Esercizi');
+  document.getElementById('exerciseDetailDesc').textContent = s.description || '';
+
+  const list = document.getElementById('exerciseDetailList');
+  list.innerHTML = s.exercises.map((ex, i) => `
+    <div class="exercise-item">
+      <div class="exercise-header">
+        <span class="exercise-num">${i + 1}</span>
+        <span class="exercise-name">${esc(ex.name || '')}</span>
+        ${ex.equipment ? `<span class="exercise-equip-badge">${esc(ex.equipment)}</span>` : ''}
+        <span class="exercise-sets">${esc(ex.sets_reps || '')}</span>
+      </div>
+      <div class="exercise-desc">${esc(ex.description || '')}</div>
+      <div class="exercise-meta">
+        ${ex.rest_sec ? `<span>⏱ Recupero: ${ex.rest_sec}s</span>` : ''}
+        ${ex.notes ? `<span class="exercise-notes">💡 ${esc(ex.notes)}</span>` : ''}
+      </div>
+    </div>
+  `).join('');
+
+  openModal('modalExerciseDetail');
 }
 
 // ─── ZWO Generator ────────────────────────────────────────────────

@@ -360,6 +360,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .weekly-plan-sessions { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: .75rem; margin-top: .5rem; }
 .wp-session { background: var(--bg3); border-radius: 8px; padding: .85rem 1rem; border-left: 3px solid var(--accent); }
 .wp-rest { border-left-color: rgba(255,255,255,.12); opacity: .6; }
+.wp-strength { border-left-color: #f9844a; }
+.wp-mobility { border-left-color: #90e0ef; }
 .wp-day { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text2); }
 .wp-date { font-weight: 400; opacity: .7; margin-left: .3rem; }
 .wp-type { font-size: .9rem; font-weight: 600; margin: .3rem 0 .15rem; display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
@@ -373,6 +375,17 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .wp-btn { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); border-radius: 5px; color: var(--text1); font-size: .8rem; padding: .2rem .45rem; cursor: pointer; transition: background .12s; }
 .wp-btn:hover { background: rgba(255,255,255,.14); }
 .wp-btn-del:hover { background: rgba(255,80,80,.2); border-color: var(--danger); }
+
+/* ─── Exercise Detail Modal ─────────────────────────────────────── */
+.exercise-item { background: var(--bg3); border-radius: 8px; padding: .85rem 1rem; margin-bottom: .75rem; border-left: 3px solid var(--accent); }
+.exercise-header { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: .45rem; }
+.exercise-num { background: var(--accent); color: #fff; border-radius: 50%; width: 1.4rem; height: 1.4rem; display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 700; flex-shrink: 0; }
+.exercise-name { font-weight: 600; font-size: .95rem; flex: 1; }
+.exercise-equip-badge { font-size: .7rem; background: rgba(108,99,255,.18); color: var(--accent); border-radius: 4px; padding: .1rem .4rem; white-space: nowrap; }
+.exercise-sets { font-size: .8rem; color: var(--text2); background: rgba(255,255,255,.06); border-radius: 4px; padding: .1rem .4rem; white-space: nowrap; }
+.exercise-desc { font-size: .875rem; color: var(--text1); line-height: 1.55; margin-bottom: .4rem; }
+.exercise-meta { display: flex; gap: 1rem; flex-wrap: wrap; font-size: .8rem; color: var(--text2); }
+.exercise-notes { color: #f9c74f; }
 
 /* ─── Responsive ────────────────────────────────────────────────── */
 @media (max-width: 900px) {

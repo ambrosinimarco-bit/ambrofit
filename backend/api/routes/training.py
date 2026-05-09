@@ -1,4 +1,5 @@
 import asyncio
+import json
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from datetime import date
@@ -113,17 +114,20 @@ def save_weekly_plan_endpoint(body: SaveWeeklyPlanRequest):
 
     rows = []
     for s in sessions:
-        rows.append({
+        row = {
             "plan_id": plan_id,
             "user_id": body.user_id,
             "scheduled_date": s["date"],
-            "activity_type": "ride",
+            "activity_type": "ride" if s.get("type") not in ("strength", "mobility") else s["type"],
             "title": s.get("name") or s.get("type") or "Sessione",
             "description": s.get("description") or "",
             "duration_target_min": s.get("duration_min") or 45,
             "intensity": s.get("type") or "moderate",
             "status": "planned",
-        })
+        }
+        if s.get("exercises"):
+            row["exercises_json"] = json.dumps(s["exercises"], ensure_ascii=False)
+        rows.append(row)
     db.table("training_sessions").insert(rows).execute()
 
     return {"plan_id": plan_id, "sessions_saved": len(rows)}

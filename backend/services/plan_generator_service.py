@@ -261,6 +261,29 @@ Contesto: {coaching}
 
 Zone FTP: Z1=0.50-0.56 | Z2=0.56-0.75 | SS=0.84-0.95 | Tempo=0.76-0.90 | VO2max=1.06-1.20
 
+SESSIONI DI FORZA/MOBILITÀ (type="strength" o type="mobility"):
+- Per queste sessioni: segments=null, indoor=true, power_targets=null.
+- Aggiungi campo "exercises" con lista dettagliata degli esercizi.
+- Attrezzatura disponibile: TRX, bosu, tappetino, elastici (varie resistenze), manubri leggeri/medi, panca.
+- VINCOLI MEDICI ESERCIZI (CRITICO, inderogabili):
+  * NO pressione diretta zona inguinale (no leg press pesante, no squat profondi con carico)
+  * NO addominali massimali (no crunch pesanti, no sit-up, no leg raise pesanti)
+  * Preferire esercizi in piedi, TRX, o plank leggeri
+  * Focus funzionale ciclismo: glutei, quadricipiti, dorsali, spalle, core stabilità
+- Formato campo "exercises":
+  [
+    {{
+      "name": "TRX Row",
+      "equipment": "TRX",
+      "description": "Inclinati con i piedi avanti verso il punto di ancoraggio. Tira le maniglie verso il petto flettendo i gomiti, tenendo il corpo rigido.",
+      "sets_reps": "3×12",
+      "rest_sec": 60,
+      "notes": "Core attivo. Gomiti vicini al busto. Evita di inarcare la schiena."
+    }}
+  ]
+- Per "strength": 6-10 esercizi focalizzati su forza e stabilità per il ciclismo.
+- Per "mobility": 6-10 esercizi di allungamento, mobilità articolare, rilassamento muscolare post-bici.
+
 LIMITI DURATA (rispettare rigorosamente):
 - Sessioni infrasettimanali lun-ven: MAX 75 min oppure MAX 40km outdoor. Di norma indoor sui rulli.
 - Solo il lungo del weekend (sab o dom): può essere outdoor, 90-180 min, 60-100km.
@@ -281,7 +304,7 @@ JSON esatto:
     {{
       "day_name": "lunedì",
       "date": "YYYY-MM-DD",
-      "type": "recovery|base|long|sweetspot|tempo|vo2max|rest",
+      "type": "recovery|base|long|sweetspot|tempo|vo2max|strength|mobility|rest",
       "name": "Sweet Spot 45min",
       "duration_min": 45,
       "indoor": true,
@@ -291,6 +314,22 @@ JSON esatto:
         {{"type":"Warmup","duration_min":10,"power_low":0.50,"power_high":0.75}},
         {{"type":"SteadyState","duration_min":28,"power":0.88}},
         {{"type":"Cooldown","duration_min":7,"power_high":0.60,"power_low":0.35}}
+      ],
+      "exercises": null
+    }},
+    {{
+      "day_name": "mercoledì",
+      "date": "YYYY-MM-DD",
+      "type": "strength",
+      "name": "Forza funzionale 40min",
+      "duration_min": 40,
+      "indoor": true,
+      "description": "Circuito forza funzionale per il ciclismo. Focus glutei e dorsali.",
+      "power_targets": null,
+      "segments": null,
+      "exercises": [
+        {{"name":"TRX Row","equipment":"TRX","description":"Tira le maniglie verso il petto, corpo rigido.","sets_reps":"3×12","rest_sec":60,"notes":"Gomiti vicini al busto."}},
+        {{"name":"Romanian Deadlift","equipment":"manubri","description":"Piedi larghezza spalle, scendi con manubri lungo le gambe mantenendo schiena dritta.","sets_reps":"3×10","rest_sec":90,"notes":"Senti lo stretch ai femorali. Nessuna pressione inguinale."}}
       ]
     }}
   ],
@@ -299,10 +338,17 @@ JSON esatto:
 
     resp = client.messages.create(
         model="claude-opus-4-7",
-        max_tokens=4000,
+        max_tokens=6000,
         messages=[{"role": "user", "content": prompt}],
     )
-    plan_data = json.loads(resp.content[0].text)
+    raw = resp.content[0].text.strip()
+    # Strip markdown code fences if present
+    if raw.startswith("```"):
+        raw = raw.split("```", 2)[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.rstrip("`").strip()
+    plan_data = json.loads(raw)
     sessions = plan_data.get("sessions", [])
     summary = plan_data.get("summary", "")
 

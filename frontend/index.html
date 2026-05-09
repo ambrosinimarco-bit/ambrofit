@@ -851,6 +851,21 @@
     </div>
   </div>
 
+  <!-- Exercise Detail Modal -->
+  <div class="modal modal-wide" id="modalExerciseDetail">
+    <div class="modal-header">
+      <h3 id="exerciseDetailTitle">📋 Esercizi</h3>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="exerciseDetailDesc" style="color:var(--text2);font-size:.88rem;margin-bottom:1.25rem"></p>
+      <div id="exerciseDetailList"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Chiudi</button>
+    </div>
+  </div>
+
   <script src="/static/js/api.js"></script>
   <script src="/static/js/charts.js"></script>
   <script src="/static/js/app.js"></script>
