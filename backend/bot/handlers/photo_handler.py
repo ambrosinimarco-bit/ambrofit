@@ -1,6 +1,9 @@
 import asyncio
+import logging
 import re
 from datetime import date, timedelta
+
+logger = logging.getLogger(__name__)
 from telegram import Update
 from telegram.ext import ContextTypes
 from backend.services.claude_service import (
@@ -263,8 +266,14 @@ async def _send_activity_report(
                 target_id = res.data[0]["id"]
 
         if target_id:
-            db.table("activities").update({"coaching_notes": report})\
+            upd = db.table("activities").update({"coaching_notes": report})\
                 .eq("id", target_id).execute()
+            if upd.data:
+                logger.info("coaching_notes saved → activity_id=%s", target_id)
+            else:
+                logger.warning("coaching_notes UPDATE returned no rows for activity_id=%s", target_id)
+        else:
+            logger.warning("coaching_notes NOT saved: no activity found for user=%s today", user_id)
 
     except Exception as e:
         await update.message.reply_text(f"⚠️ Report non generato: {e}")

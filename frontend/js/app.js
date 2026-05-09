@@ -376,7 +376,14 @@ function openActivityDetail(id) {
       <div class="detail-note">${esc(a.notes)}</div>
     </div>` : '';
 
-  document.getElementById('actDetailBody').innerHTML = metricsHtml + rpeHtml + conditionHtml + physicalHtml + notesHtml || '<p style="color:var(--text2)">Nessun dato aggiuntivo disponibile.</p>';
+  // Report coaching da Garmin
+  const coachReportHtml = a.coaching_notes ? `
+    <div class="detail-section">
+      <div class="detail-section-title">📋 Report coach</div>
+      <div class="detail-note" style="line-height:1.6;white-space:pre-wrap">${mdToHtml(a.coaching_notes)}</div>
+    </div>` : '';
+
+  document.getElementById('actDetailBody').innerHTML = metricsHtml + rpeHtml + conditionHtml + physicalHtml + notesHtml + coachReportHtml || '<p style="color:var(--text2)">Nessun dato aggiuntivo disponibile.</p>';
 
   document.getElementById('actDetailEditBtn').onclick = () => { closeModal(); openEditActivityModal(id); };
   document.getElementById('actDetailDeleteBtn').onclick = () => { closeModal(); deleteActivity(id); };
