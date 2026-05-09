@@ -252,9 +252,19 @@ async def _send_activity_report(
 
         await update.message.reply_text(report, parse_mode="Markdown")
 
-        if activity_id:
-            db.table("activities").update({"notes": report})\
-                .eq("id", activity_id).execute()
+        # Prefer the just-created activity_id; fall back to today's latest activity
+        target_id = activity_id
+        if not target_id:
+            today = date.today().isoformat()
+            res = db.table("activities").select("id")\
+                .eq("user_id", user_id).eq("activity_date", today)\
+                .order("created_at", desc=True).limit(1).execute()
+            if res.data:
+                target_id = res.data[0]["id"]
+
+        if target_id:
+            db.table("activities").update({"coaching_notes": report})\
+                .eq("id", target_id).execute()
 
     except Exception as e:
         await update.message.reply_text(f"⚠️ Report non generato: {e}")
