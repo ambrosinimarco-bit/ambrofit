@@ -48,6 +48,7 @@ function setupNavigation() {
 }
 
 function onTabSwitch(tab) {
+  if (tab === 'forma') loadFitness();
   if (tab === 'overview') loadOverview();
   if (tab === 'nutrition') loadNutrition();
   if (tab === 'activities') loadActivities();
@@ -1082,6 +1083,300 @@ async function deleteExercise(id) {
   await api.deleteExercise(id);
   delete exercisesCache[id];
   loadExercises();
+}
+
+// ─── Forma & Affaticamento ────────────────────────────────────────
+
+async function loadFitness() {
+  if (!USER_ID) return;
+  const data = await api.getFitness(USER_ID).catch(() => null);
+  if (!data) {
+    document.getElementById('fitnessStatusCard').innerHTML =
+      '<p style="color:var(--danger)">Errore nel caricamento dei dati.</p>';
+    return;
+  }
+  const { activities, profile } = data;
+  const rides = activities.filter(a => a.activity_type === 'ride');
+
+  // Calcola CTL/ATL/TSB sugli ultimi 90 giorni, mostra gli ultimi 60
+  const fitnessTimeline = calcFitness(activities, 90);
+  const displayTimeline  = fitnessTimeline.slice(-60);
+
+  renderFitnessStatus(displayTimeline, rides, profile);
+  renderPMC(displayTimeline);
+  renderPowerChart(rides.filter(r => r.avg_power_w).slice(-10), profile);
+  renderCadenceChart(rides.filter(r => r.avg_cadence_rpm).slice(-10), profile);
+  renderRpePowerChart(rides.filter(r => r.rpe && r.avg_power_w));
+}
+
+// ── CTL / ATL / TSB ───────────────────────────────────────────────
+
+function calcFitness(activities, days) {
+  // Build date → total TSS map
+  const tssMap = {};
+  for (const a of activities) {
+    if (a.tss) tssMap[a.activity_date] = (tssMap[a.activity_date] || 0) + a.tss;
+  }
+
+  const today = new Date();
+  let ctl = 0, atl = 0;
+  const result = [];
+
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const ds = d.toISOString().split('T')[0];
+    const tss = tssMap[ds] || 0;
+    // Exponential weighted average
+    ctl = ctl + (tss - ctl) / 42;
+    atl = atl + (tss - atl) / 7;
+    result.push({ date: ds, ctl: +ctl.toFixed(1), atl: +atl.toFixed(1), tsb: +(ctl - atl).toFixed(1), tss });
+  }
+  return result;
+}
+
+// ── Status card ───────────────────────────────────────────────────
+
+function renderFitnessStatus(timeline, rides, profile) {
+  const last = timeline[timeline.length - 1];
+  const { ctl, atl, tsb } = last;
+
+  let label, color, advice, icon;
+  if (tsb > 5)        { label = 'Sei fresco';        color = 'var(--success)'; icon = '🟢'; advice = 'Ottimo momento per spingere o affrontare una gara.'; }
+  else if (tsb >= -10){ label = 'Carico ottimale';   color = 'var(--accent)';  icon = '🔵'; advice = 'Sei nel range ideale: continua così, mantieni la consistenza.'; }
+  else                 { label = 'Sei affaticato';    color = 'var(--danger)';  icon = '🔴'; advice = 'Dai priorità al recupero nelle prossime 48-72h: Z1 o riposo.'; }
+
+  // Power trend: last 7 days vs prev 7
+  const now = Date.now();
+  const ridesWithPower = rides.filter(r => r.avg_power_w);
+  const p7  = ridesWithPower.filter(r => (now - new Date(r.activity_date)) / 86400000 <= 7);
+  const p714 = ridesWithPower.filter(r => { const d = (now - new Date(r.activity_date)) / 86400000; return d > 7 && d <= 14; });
+  const avgP = arr => arr.length ? Math.round(arr.reduce((s, r) => s + r.avg_power_w, 0) / arr.length) : null;
+  const pw7 = avgP(p7), pw714 = avgP(p714);
+  let powerTrend = '';
+  if (pw7 && pw714) {
+    const delta = pw7 - pw714;
+    const sign = delta >= 0 ? '+' : '';
+    powerTrend = `<span style="color:${delta >= 0 ? 'var(--success)' : 'var(--danger)'}">Potenza ultimi 7gg: ${pw7}W (${sign}${delta}W vs settimana precedente)</span>`;
+  } else if (pw7) {
+    powerTrend = `<span>Potenza ultimi 7gg: ${pw7}W</span>`;
+  }
+
+  document.getElementById('fitnessStatusCard').innerHTML = `
+    <div class="fitness-status-inner">
+      <div class="fitness-status-main">
+        <div class="fitness-status-icon">${icon}</div>
+        <div>
+          <div class="fitness-status-label" style="color:${color}">${label}</div>
+          <div class="fitness-status-advice">${advice}</div>
+          ${powerTrend ? `<div class="fitness-status-power">${powerTrend}</div>` : ''}
+        </div>
+      </div>
+      <div class="fitness-status-metrics">
+        <div class="fitness-metric-box">
+          <div class="fitness-metric-val" style="color:#6c63ff">${ctl.toFixed(0)}</div>
+          <div class="fitness-metric-lbl">CTL / Forma</div>
+        </div>
+        <div class="fitness-metric-box">
+          <div class="fitness-metric-val" style="color:#ff4757">${atl.toFixed(0)}</div>
+          <div class="fitness-metric-lbl">ATL / Affaticamento</div>
+        </div>
+        <div class="fitness-metric-box">
+          <div class="fitness-metric-val" style="color:${color}">${tsb > 0 ? '+' : ''}${tsb.toFixed(0)}</div>
+          <div class="fitness-metric-lbl">TSB / Freschezza</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ── PMC chart ─────────────────────────────────────────────────────
+
+function renderPMC(timeline) {
+  destroyChart('pmc');
+  const ctx = document.getElementById('chartPMC');
+  if (!ctx) return;
+
+  const labels = timeline.map(d => formatDateShort(d.date));
+  const tsbColors = timeline.map(d => d.tsb >= 0 ? 'rgba(0,212,170,0.15)' : 'rgba(255,71,87,0.10)');
+
+  chartInstances.pmc = new Chart(ctx, {
+    data: {
+      labels,
+      datasets: [
+        {
+          type: 'line', label: 'CTL (forma)',
+          data: timeline.map(d => d.ctl),
+          borderColor: '#6c63ff', backgroundColor: 'rgba(108,99,255,0.08)',
+          borderWidth: 2, pointRadius: 0, fill: true, tension: 0.3, yAxisID: 'yLeft',
+        },
+        {
+          type: 'line', label: 'ATL (affaticamento)',
+          data: timeline.map(d => d.atl),
+          borderColor: '#ff4757', backgroundColor: 'transparent',
+          borderWidth: 2, pointRadius: 0, fill: false, tension: 0.3, yAxisID: 'yLeft',
+        },
+        {
+          type: 'line', label: 'TSB (freschezza)',
+          data: timeline.map(d => d.tsb),
+          borderColor: '#00d4aa', backgroundColor: tsbColors,
+          borderWidth: 2, borderDash: [4, 3], pointRadius: 0, fill: true, tension: 0.3, yAxisID: 'yRight',
+        },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { callbacks: {
+        label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}`,
+      }}},
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { maxTicksLimit: 10 } },
+        yLeft:  { position: 'left',  grid: { color: 'rgba(255,255,255,0.04)' }, title: { display: true, text: 'CTL / ATL' } },
+        yRight: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'TSB' } },
+      },
+    },
+  });
+}
+
+// ── Power chart ───────────────────────────────────────────────────
+
+function renderPowerChart(rides, profile) {
+  destroyChart('power');
+  const ctx = document.getElementById('chartPower');
+  if (!ctx || !rides.length) { if(ctx) ctx.parentElement.innerHTML = '<p style="color:var(--text2);padding:1rem;text-align:center">Nessun dato di potenza disponibile.</p>'; return; }
+
+  const ftp  = profile.ftp_watts;
+  const z2   = profile.power_zone_2_max;
+  const z3   = profile.power_zone_3_max;
+  const labels = rides.map(r => formatDateShort(r.activity_date));
+  const n = rides.length;
+
+  // Horizontal reference lines as constant datasets
+  const refLine = (val, label, color) => ({
+    type: 'line', label, data: Array(n).fill(val),
+    borderColor: color, borderDash: [6,4], borderWidth: 1.5,
+    pointRadius: 0, fill: false, yAxisID: 'y',
+  });
+
+  chartInstances.power = new Chart(ctx, {
+    data: {
+      labels,
+      datasets: [
+        { type: 'bar',  label: 'Potenza media',
+          data: rides.map(r => r.avg_power_w),
+          backgroundColor: 'rgba(108,99,255,0.55)', borderRadius: 4, yAxisID: 'y' },
+        { type: 'line', label: 'NP (potenza normalizzata)',
+          data: rides.map(r => r.normalized_power_w || null),
+          borderColor: '#6c63ff', backgroundColor: 'transparent',
+          borderWidth: 2, pointRadius: 3, fill: false, tension: 0.2, yAxisID: 'y' },
+        refLine(ftp, `FTP ${ftp}W`,  '#ff4757'),
+        refLine(z2,  `Z2 max ${z2}W`, '#00d4aa'),
+        refLine(z3,  `Z3 max ${z3}W`, '#ffa502'),
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { labels: { filter: item => !item.text.startsWith('FTP') && !item.text.startsWith('Z') } },
+        tooltip: { callbacks: { label: ctx => ctx.parsed.y != null ? ` ${ctx.dataset.label}: ${ctx.parsed.y}W` : null } } },
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { grid: { color: 'rgba(255,255,255,0.04)' }, title: { display: true, text: 'Watt' } },
+      },
+    },
+  });
+}
+
+// ── Cadence chart ─────────────────────────────────────────────────
+
+function renderCadenceChart(rides, profile) {
+  destroyChart('cadence');
+  const ctx = document.getElementById('chartCadence');
+  if (!ctx || !rides.length) { if(ctx) ctx.parentElement.innerHTML = '<p style="color:var(--text2);padding:1rem;text-align:center">Nessun dato di cadenza disponibile.</p>'; return; }
+
+  const target = profile.target_cadence_min;
+  const labels = rides.map(r => formatDateShort(r.activity_date));
+  const n = rides.length;
+
+  chartInstances.cadence = new Chart(ctx, {
+    data: {
+      labels,
+      datasets: [
+        { type: 'line', label: 'Cadenza media (rpm)',
+          data: rides.map(r => r.avg_cadence_rpm),
+          borderColor: '#ffa502', backgroundColor: 'rgba(255,165,2,0.1)',
+          borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#ffa502',
+          fill: true, tension: 0.3, yAxisID: 'y' },
+        { type: 'line', label: `Target ${target} rpm`,
+          data: Array(n).fill(target),
+          borderColor: '#00d4aa', borderDash: [6,4], borderWidth: 1.5,
+          pointRadius: 0, fill: false, yAxisID: 'y' },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { labels: { filter: item => !item.text.startsWith('Target') } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y} rpm` } } },
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { grid: { color: 'rgba(255,255,255,0.04)' }, title: { display: true, text: 'rpm' },
+          min: Math.max(0, Math.min(...rides.map(r => r.avg_cadence_rpm || 99)) - 10),
+          max: Math.max(...rides.map(r => r.avg_cadence_rpm || 0)) + 10 },
+      },
+    },
+  });
+}
+
+// ── RPE vs Power scatter ──────────────────────────────────────────
+
+function renderRpePowerChart(rides) {
+  destroyChart('rpePower');
+  const ctx = document.getElementById('chartRpePower');
+  if (!ctx || !rides.length) { if(ctx) ctx.parentElement.innerHTML = '<p style="color:var(--text2);padding:1rem;text-align:center">Nessun dato RPE + potenza disponibile.</p>'; return; }
+
+  // Color by recency: oldest = gray, newest = accent
+  const sorted = [...rides].sort((a, b) => a.activity_date.localeCompare(b.activity_date));
+  const n = sorted.length;
+  const pointColors = sorted.map((_, i) => {
+    const t = n === 1 ? 1 : i / (n - 1);
+    const r = Math.round(150 - t * (150 - 108));
+    const g = Math.round(150 - t * (150 - 99));
+    const b2 = Math.round(150 + t * (255 - 150));
+    return `rgba(${r},${g},${b2},${0.4 + t * 0.6})`;
+  });
+
+  chartInstances.rpePower = new Chart(ctx, {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        label: 'RPE vs Potenza',
+        data: sorted.map(r => ({ x: r.rpe, y: r.avg_power_w, label: `${r.name} (${r.activity_date})` })),
+        backgroundColor: pointColors,
+        borderColor: pointColors.map(c => c.replace(/[\d.]+\)$/, '1)')),
+        pointRadius: 7, pointHoverRadius: 9,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: {
+          label: ctx => {
+            const pt = ctx.raw;
+            return ` ${pt.label}: RPE ${pt.x}/10 → ${pt.y}W`;
+          },
+        }},
+      },
+      scales: {
+        x: { title: { display: true, text: 'RPE (sforzo percepito)' },
+          min: 0.5, max: 10.5, ticks: { stepSize: 1 },
+          grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { title: { display: true, text: 'Potenza media (W)' },
+          grid: { color: 'rgba(255,255,255,0.04)' } },
+      },
+    },
+  });
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────

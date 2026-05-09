@@ -210,3 +210,68 @@ def get_goals_progress(user_id: str):
             "goal_run_km_year", "goal_steps_day", "goals_custom",
         ]},
     }
+
+
+@router.get("/fitness/{user_id}")
+def fitness_overview(user_id: str):
+    """Dati per PMC (CTL/ATL/TSB) e analisi potenza/cadenza/RPE.
+
+    Restituisce 90 giorni di attività con TSS reale o stimato,
+    più il profilo con FTP e zone per i grafici.
+    """
+    db = get_supabase()
+    since = (date.today() - timedelta(days=90)).isoformat()
+
+    acts_res = db.table("activities").select(
+        "activity_date,activity_type,name,duration_min,tss,"
+        "avg_power_w,normalized_power_w,avg_cadence_rpm,"
+        "avg_heart_rate,rpe,physical_notes"
+    ).eq("user_id", user_id).gte("activity_date", since)\
+     .order("activity_date").execute()
+    activities = acts_res.data or []
+
+    profile_res = db.table("user_profiles").select(
+        "ftp_watts,power_zone_1_max,power_zone_2_max,power_zone_3_max,power_zone_4_max,"
+        "target_cadence_min,target_cadence_max,age,weight_kg"
+    ).eq("id", user_id).limit(1).execute()
+    profile = (profile_res.data or [{}])[0]
+
+    ftp = profile.get("ftp_watts") or 202
+    age = profile.get("age") or 53
+    max_hr = 220 - age  # stima: 167 per Marco
+
+    for a in activities:
+        if a.get("tss"):
+            a["tss_estimated"] = False
+            continue
+
+        dur_h = (a.get("duration_min") or 0) / 60
+        power = a.get("normalized_power_w") or a.get("avg_power_w")
+        hr = a.get("avg_heart_rate")
+
+        if power and ftp and dur_h:
+            # Power-based: TSS = duration_h × IF² × 100
+            intensity_factor = power / ftp
+            a["tss"] = round(dur_h * (intensity_factor ** 2) * 100, 1)
+        elif hr and dur_h and max_hr:
+            # HR-based approximation
+            hr_ratio = min(hr / max_hr, 1.0)
+            a["tss"] = round(dur_h * (hr_ratio ** 2) * 100, 1)
+        elif dur_h:
+            # Fallback: durata × 0.42 (assume IF≈0.65, Z2 base)
+            a["tss"] = round(dur_h * 0.42 * 100, 1)
+        else:
+            a["tss"] = 0
+        a["tss_estimated"] = True
+
+    return {
+        "activities": activities,
+        "profile": {
+            "ftp_watts":          ftp,
+            "power_zone_2_max":   profile.get("power_zone_2_max") or 162,
+            "power_zone_3_max":   profile.get("power_zone_3_max") or 182,
+            "power_zone_4_max":   profile.get("power_zone_4_max") or 192,
+            "target_cadence_min": profile.get("target_cadence_min") or 85,
+            "target_cadence_max": profile.get("target_cadence_max") or 95,
+        },
+    }

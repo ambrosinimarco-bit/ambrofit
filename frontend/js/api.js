@@ -16,6 +16,7 @@ async function apiFetch(path, opts = {}) {
 // ── Dashboard ──────────────────────────────────────────────────────
 const api = {
   today:          (uid, date) => apiFetch(`/api/dashboard/today/${uid}${date ? '?target_date='+date : ''}`),
+  getFitness:     (uid) => apiFetch(`/api/dashboard/fitness/${uid}`),
   week:           (uid, offset=0) => apiFetch(`/api/dashboard/week/${uid}?week_offset=${offset}`),
   calorieTrend:   (uid, days=30) => apiFetch(`/api/dashboard/calorie-trend/${uid}?days=${days}`),
   weightTrend:    (uid, days=60) => apiFetch(`/api/dashboard/weight-trend/${uid}?days=${days}`),

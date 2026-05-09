@@ -19,6 +19,7 @@
         <li><a href="#" class="nav-item active" data-tab="overview"><span>📊</span> Panoramica</a></li>
         <li><a href="#" class="nav-item" data-tab="nutrition"><span>🍽</span> Nutrizione</a></li>
         <li><a href="#" class="nav-item" data-tab="activities"><span>🏃</span> Attività</a></li>
+        <li><a href="#" class="nav-item" data-tab="forma"><span>📈</span> Forma</a></li>
         <li><a href="#" class="nav-item" data-tab="exercises"><span>💪</span> Esercizi</a></li>
         <li><a href="#" class="nav-item" data-tab="training"><span>📅</span> Piano</a></li>
         <li><a href="#" class="nav-item" data-tab="health"><span>❤️</span> Salute</a></li>
@@ -214,6 +215,50 @@
         <div class="page-title">Attività fisiche</div>
         <div id="activitiesList" class="activities-full-list"></div>
         <button class="btn btn-primary btn-block" onclick="openAddActivityModal()">+ Registra attività</button>
+      </section>
+
+      <!-- ── TAB: Forma & Affaticamento ── -->
+      <section class="tab-content" id="tab-forma">
+        <div class="page-title">Forma &amp; Affaticamento</div>
+
+        <!-- Status card -->
+        <div id="fitnessStatusCard" class="card fitness-status-card">
+          <div style="color:var(--text2);font-size:.9rem">Caricamento dati...</div>
+        </div>
+
+        <!-- PMC -->
+        <div class="card" style="margin-top:1rem">
+          <div class="card-header-row">
+            <h3>Performance Management Chart</h3>
+            <span class="chart-legend-row">
+              <span class="legend-dot" style="background:#6c63ff"></span>CTL (forma)
+              <span class="legend-dot" style="background:#ff4757;margin-left:.75rem"></span>ATL (affaticamento)
+              <span class="legend-dot" style="background:#00d4aa;margin-left:.75rem"></span>TSB (freschezza)
+            </span>
+          </div>
+          <div class="chart-wrap chart-tall"><canvas id="chartPMC"></canvas></div>
+        </div>
+
+        <!-- Power + Cadence grid -->
+        <div class="charts-grid-2" style="margin-top:1rem">
+          <div class="card">
+            <h3>Potenza nel tempo</h3>
+            <p class="chart-subtitle">Ultime 10 uscite · FTP 202W</p>
+            <div class="chart-wrap"><canvas id="chartPower"></canvas></div>
+          </div>
+          <div class="card">
+            <h3>Cadenza nel tempo</h3>
+            <p class="chart-subtitle">Ultime 10 uscite · target 85 rpm</p>
+            <div class="chart-wrap"><canvas id="chartCadence"></canvas></div>
+          </div>
+        </div>
+
+        <!-- RPE vs Power -->
+        <div class="card" style="margin-top:1rem">
+          <h3>RPE vs Potenza</h3>
+          <p class="chart-subtitle">Stessa fatica, più watt = miglioramento. Punti colorati = recenti.</p>
+          <div class="chart-wrap"><canvas id="chartRpePower"></canvas></div>
+        </div>
       </section>
 
       <!-- ── TAB: Esercizi ── -->

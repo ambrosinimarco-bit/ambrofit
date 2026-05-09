@@ -292,10 +292,35 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .goal-form-block { background: var(--bg3); border-radius: 8px; padding: 1rem; }
 .goal-form-title { font-size: .85rem; font-weight: 600; margin-bottom: .75rem; }
 
+/* ─── Forma & Affaticamento ─────────────────────────────────────── */
+.chart-wrap { position: relative; height: 240px; }
+.chart-wrap.chart-tall { height: 300px; }
+.chart-subtitle { font-size: .78rem; color: var(--text2); margin: .1rem 0 .75rem; }
+.charts-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+
+.card-header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .5rem; margin-bottom: .75rem; }
+.card-header-row h3 { margin: 0; }
+.chart-legend-row { display: flex; align-items: center; gap: .25rem; font-size: .75rem; color: var(--text2); }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+.fitness-status-card { padding: 1.25rem; }
+.fitness-status-inner { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.fitness-status-main { display: flex; align-items: flex-start; gap: 1rem; flex: 1; min-width: 200px; }
+.fitness-status-icon { font-size: 2rem; line-height: 1; }
+.fitness-status-label { font-size: 1.2rem; font-weight: 700; }
+.fitness-status-advice { font-size: .85rem; color: var(--text2); margin-top: .2rem; }
+.fitness-status-power { font-size: .82rem; margin-top: .4rem; }
+.fitness-status-metrics { display: flex; gap: 1rem; }
+.fitness-metric-box { text-align: center; background: var(--bg3); border-radius: var(--radius); padding: .75rem 1.25rem; min-width: 80px; }
+.fitness-metric-val { font-size: 1.5rem; font-weight: 700; line-height: 1.1; }
+.fitness-metric-lbl { font-size: .68rem; color: var(--text2); margin-top: .2rem; text-transform: uppercase; letter-spacing: .04em; }
+
 /* ─── Responsive ────────────────────────────────────────────────── */
 @media (max-width: 900px) {
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .charts-row { grid-template-columns: 1fr; }
+  .charts-grid-2 { grid-template-columns: 1fr; }
+  .fitness-status-inner { flex-direction: column; }
 }
 @media (max-width: 600px) {
   .sidebar { width: 60px; }
