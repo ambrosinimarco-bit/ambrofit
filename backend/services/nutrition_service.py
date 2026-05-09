@@ -1,5 +1,8 @@
+import logging
 from datetime import date
 from backend.database.client import get_supabase
+
+logger = logging.getLogger(__name__)
 
 
 def calculate_bmr(weight_kg: float, height_cm: float, age: int, sex: str = "male") -> int:
@@ -27,7 +30,12 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
     try:
         health_result = db.table("daily_health").select("*").eq("user_id", user_id).eq("health_date", date_str).limit(1).execute()
     except Exception:
-        health_cols = "id,user_id,health_date,weight_kg,sleep_hours,steps,body_battery,hrv_ms,stress_score,resting_hr,notes,created_at"
+        # Fallback for older DB schemas — keep total_calories_iphone in the list
+        health_cols = (
+            "id,user_id,health_date,weight_kg,sleep_hours,steps,"
+            "body_battery,hrv_ms,stress_score,resting_hr,notes,"
+            "total_calories_iphone,created_at"
+        )
         health_result = db.table("daily_health").select(health_cols).eq("user_id", user_id).eq("health_date", date_str).limit(1).execute()
     user_result = db.table("user_profiles").select("*").eq("id", user_id).limit(1).execute()
 
@@ -66,11 +74,23 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
     if _has_reliable_cal and _weight_for_macros:
         protein_goal, carbs_goal, fat_goal = calc_dynamic_macros(calories_out, float(_weight_for_macros))
         macro_targets_dynamic = True
+        logger.info(
+            "macro targets DYNAMIC | cal_iphone=%s bmr=%s cal_out=%.0f weight=%.1f "
+            "→ P=%dg C=%dg F=%dg",
+            total_calories_iphone, bmr, calories_out, _weight_for_macros,
+            protein_goal, carbs_goal, fat_goal,
+        )
     else:
         protein_goal = user_data.get("protein_goal_g", 150)
         carbs_goal = user_data.get("carbs_goal_g", 280)
         fat_goal = user_data.get("fat_goal_g", 75)
         macro_targets_dynamic = False
+        logger.warning(
+            "macro targets STATIC (fallback) | cal_iphone=%s bmr=%s weight=%s "
+            "→ has_reliable_cal=%s weight_ok=%s",
+            total_calories_iphone, bmr, _weight_for_macros,
+            _has_reliable_cal, bool(_weight_for_macros),
+        )
 
     # Weight: use today's entry; fall back to latest available measurement
     weight_kg = health_data.get("weight_kg")
