@@ -201,6 +201,7 @@ def generate_weekly_plan(
     available_days: list[str] | None = None,
     target_event_name: str | None = None,
     target_event_date: str | None = None,
+    user_notes: str | None = None,
 ) -> dict:
     db = get_supabase()
 
@@ -233,18 +234,25 @@ def generate_weekly_plan(
         date_list.append(f"{_DAY_IT[d.weekday()]} {d.isoformat()}")
         d += timedelta(days=1)
 
-    target_line = (
-        f"\nEvento target: {target_event_name} il {target_event_date}"
-        if target_event_name and target_event_date else ""
+    user_notes_block = (
+        f"\n⚠️ ISTRUZIONI PRIORITARIE DELL'UTENTE (sovrascrivono ogni altra regola):\n{user_notes}\n"
+        if user_notes and user_notes.strip() else ""
     )
 
+    target_block = ""
+    if target_event_name and target_event_date:
+        target_block = (
+            f"\n⚠️ EVENTO TARGET: \"{target_event_name}\" il {target_event_date}\n"
+            "CRITICO: usa ESATTAMENTE questa data nel tuo ragionamento — non modificarla né ricalcolarla.\n"
+            "Gestisci il carico in modo da arrivare all'evento con TSB positivo (+5/+15).\n"
+        )
+
     prompt = f"""Crea un piano di allenamento ciclismo dettagliato per Marco.
-
+{user_notes_block}
 PERIODO: {start_date} → {end_date}
-Giorni: {", ".join(date_list)}
-Obiettivo: {objective}
-Giorni disponibili per allenarsi: {", ".join(avail_it)}{target_line}
-
+Giorni del periodo: {", ".join(date_list)}
+Obiettivo settimana: {objective}
+Giorni disponibili per allenarsi: {", ".join(avail_it)}{target_block}
 PROFILO:
 FTP {ftp}W | Peso {weight_kg}kg
 CTL {ctl} | ATL {atl} | TSB {tsb}
@@ -253,11 +261,18 @@ Contesto: {coaching}
 
 Zone FTP: Z1=0.50-0.56 | Z2=0.56-0.75 | SS=0.84-0.95 | Tempo=0.76-0.90 | VO2max=1.06-1.20
 
-REGOLE:
+LIMITI DURATA (rispettare rigorosamente):
+- Sessioni infrasettimanali lun-ven: MAX 75 min oppure MAX 40km outdoor. Di norma indoor sui rulli.
+- Solo il lungo del weekend (sab o dom): può essere outdoor, 90-180 min, 60-100km.
+- Sessioni di recupero: MAX 45-60 min.
+- Se una sessione è indoor non inserire distanza (solo duration_min).
+- NON assegnare mai >40km in un giorno infrasettimanale. Mai >90 min infrasettimanale.
+
+REGOLE GENERALI:
 - Genera una voce per OGNI giorno del periodo (anche i giorni di riposo: type="rest", segments=null)
 - Sessioni indoor hanno segments per il file .zwo (Warmup + corpo + Cooldown)
-- Sessioni outdoor lunghe: indoor=false, segments=null
-- TSB<-10 → privilegia recupero/Z2. TSB>+10 → c'è spazio per qualità. TSB 0-10 → mix.
+- Sessioni outdoor: indoor=false, segments=null
+- TSB<-10 → privilegia recupero/Z2. TSB>+10 → c'è spazio per qualità. TSB 0-10 → mix equilibrato.
 - Rispetta vincoli medici. Riscaldamento sempre ≥8min.
 
 JSON esatto:

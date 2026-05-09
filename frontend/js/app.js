@@ -1381,7 +1381,8 @@ function renderRpePowerChart(rides) {
 }
 
 // ─── Weekly Plan Generator ────────────────────────────────────────
-let _generatedPlan = null;  // stores last generated plan data
+let _generatedPlan = null;
+let _editingSessionIdx = -1;
 
 function openWeeklyPlanModal() {
   document.getElementById('wpError').style.display = 'none';
@@ -1404,12 +1405,14 @@ async function generateWeeklyPlan() {
   const eventDate = document.getElementById('wpEventDate').value || null;
 
   try {
+    const userNotes = document.getElementById('wpNotes').value.trim() || null;
     const data = await api.generateWeeklyPlan(USER_ID, {
       period,
       objective,
       available_days: availableDays,
       target_event_name: eventName,
       target_event_date: eventDate,
+      user_notes: userNotes,
     });
     _generatedPlan = data;
     closeModal();
@@ -1441,19 +1444,19 @@ function renderWeeklyPlanPreview(data) {
   const _LABEL = { recovery: 'Recupero', base: 'Base Z2', long: 'Lungo Z2', sweetspot: 'Sweet Spot', tempo: 'Tempo', vo2max: 'VO2max', rest: 'Riposo' };
   const ftp = 202;
 
-  sessionsEl.innerHTML = sessions.map(s => {
+  sessionsEl.innerHTML = sessions.map((s, idx) => {
     const type = s.type || 'base';
     const icon = _ICONS[type] || '🔵';
     const label = _LABEL[type] || type;
     if (type === 'rest') {
       return `<div class="wp-session wp-rest">
-        <div class="wp-day">${s.day_name || ''}</div>
+        <div class="wp-day">${s.day_name || ''} <span class="wp-date">${s.date || ''}</span></div>
         <div class="wp-type">${icon} Riposo</div>
+        <div class="wp-actions"><button class="wp-btn" onclick="editSessionCard(${idx})">✏️</button><button class="wp-btn wp-btn-del" onclick="deleteSessionCard(${idx})">🗑️</button></div>
       </div>`;
     }
     const indoorBadge = s.indoor ? '<span class="wp-badge">🏠 indoor</span>' : '<span class="wp-badge wp-outdoor">🌿 outdoor</span>';
     const pwrLine = s.power_targets?.main ? `<span class="wp-power">~${s.power_targets.main}W</span>` : '';
-    // Build segment summary
     let segSummary = '';
     if (s.segments) {
       const segs = s.segments.map(seg => {
@@ -1465,12 +1468,14 @@ function renderWeeklyPlanPreview(data) {
       }).filter(Boolean).join(' · ');
       segSummary = `<div class="wp-segments">${segs}</div>`;
     }
+    const zwoBtn = s.segments ? `<button class="wp-btn" title="Scarica .zwo" onclick="downloadSessionZwo(${idx})">🚴</button>` : '';
     return `<div class="wp-session">
       <div class="wp-day">${s.day_name || ''} <span class="wp-date">${s.date || ''}</span></div>
       <div class="wp-type">${icon} ${label} ${indoorBadge} ${pwrLine}</div>
       <div class="wp-name">${esc(s.name || '')}</div>
       <div class="wp-desc">${esc(s.description || '')}</div>
       ${segSummary}
+      <div class="wp-actions">${zwoBtn}<button class="wp-btn" onclick="editSessionCard(${idx})">✏️</button><button class="wp-btn wp-btn-del" onclick="deleteSessionCard(${idx})">🗑️</button></div>
     </div>`;
   }).join('');
 
@@ -1520,6 +1525,60 @@ async function savePlanToDB() {
   } catch (err) {
     btn.textContent = '⚠️ Errore salvataggio';
     btn.disabled = false;
+  }
+}
+
+function editSessionCard(idx) {
+  if (!_generatedPlan?.sessions) return;
+  _editingSessionIdx = idx;
+  const s = _generatedPlan.sessions[idx];
+  document.getElementById('esDate').value = s.date || '';
+  document.getElementById('esType').value = s.type || 'base';
+  document.getElementById('esDuration').value = s.duration_min || 60;
+  document.getElementById('esName').value = s.name || '';
+  document.getElementById('esDescription').value = s.description || '';
+  openModal('modalEditSession');
+}
+
+function saveSessionEdit() {
+  if (_editingSessionIdx < 0 || !_generatedPlan?.sessions) return;
+  const s = _generatedPlan.sessions[_editingSessionIdx];
+  s.date = document.getElementById('esDate').value;
+  s.type = document.getElementById('esType').value;
+  s.duration_min = parseInt(document.getElementById('esDuration').value) || s.duration_min;
+  s.name = document.getElementById('esName').value.trim();
+  s.description = document.getElementById('esDescription').value.trim();
+  // Update day_name from new date
+  if (s.date) {
+    const _DAY_IT = ['lunedì','martedì','mercoledì','giovedì','venerdì','sabato','domenica'];
+    const d = new Date(s.date + 'T00:00:00');
+    s.day_name = _DAY_IT[d.getDay() === 0 ? 6 : d.getDay() - 1];
+  }
+  closeModal();
+  renderWeeklyPlanPreview(_generatedPlan);
+}
+
+function deleteSessionCard(idx) {
+  if (!_generatedPlan?.sessions) return;
+  _generatedPlan.sessions.splice(idx, 1);
+  renderWeeklyPlanPreview(_generatedPlan);
+}
+
+async function downloadSessionZwo(idx) {
+  if (!_generatedPlan?.sessions) return;
+  const s = _generatedPlan.sessions[idx];
+  if (!s.segments) return;
+  try {
+    const data = await api.generateSessionZwo(s.name || 'Workout', s.description || '', s.segments, 202);
+    const blob = new Blob([data.xml], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = data.filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert('Errore generazione .zwo: ' + err.message);
   }
 }
 

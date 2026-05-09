@@ -57,6 +57,7 @@ class WeeklyPlanRequest(BaseModel):
     available_days: list[str] = []        # ["monday","tuesday",...]
     target_event_name: str | None = None
     target_event_date: str | None = None
+    user_notes: str | None = None         # testo libero dell'utente
 
 
 class SaveWeeklyPlanRequest(BaseModel):
@@ -77,6 +78,7 @@ async def generate_weekly_plan_endpoint(body: WeeklyPlanRequest):
             body.available_days or None,
             body.target_event_name,
             body.target_event_date,
+            body.user_notes,
         )
         return result
     except Exception as e:
@@ -125,6 +127,23 @@ def save_weekly_plan_endpoint(body: SaveWeeklyPlanRequest):
     db.table("training_sessions").insert(rows).execute()
 
     return {"plan_id": plan_id, "sessions_saved": len(rows)}
+
+
+class SessionZwoRequest(BaseModel):
+    name: str
+    description: str = ""
+    segments: list[dict]
+    ftp: int = 202
+    weight_kg: float = 75.0
+
+
+@router.post("/generate-session-zwo")
+def generate_session_zwo(body: SessionZwoRequest):
+    """Genera .zwo da segmenti già pianificati (senza chiamata Claude)."""
+    from backend.services.zwo_service import generate_zwo_xml, safe_filename
+    workout = {"name": body.name, "description": body.description, "segments": body.segments}
+    xml = generate_zwo_xml(workout, body.ftp, body.weight_kg)
+    return {"xml": xml, "filename": safe_filename(body.name) + ".zwo"}
 
 
 class ZwoGenerateRequest(BaseModel):

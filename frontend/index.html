@@ -754,11 +754,59 @@
         </div>
       </div>
 
+      <div class="form-group" style="margin-top:.25rem">
+        <label>Note aggiuntive / contesto libero <span style="font-weight:400;color:var(--text2)">(opzionale)</span></label>
+        <textarea id="wpNotes" rows="3" placeholder="es. martedì ho una riunione fino alle 20, venerdì preferisco riposare, voglio fare il Novecolli il 24 maggio al 100%, giovedì e sabato sono disponibile solo al mattino..."></textarea>
+      </div>
+
       <div id="wpError" style="display:none;color:var(--danger);font-size:.85rem;margin-top:.5rem"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
       <button class="btn btn-primary" onclick="generateWeeklyPlan()" id="wpGenerateBtn">🧠 Genera piano</button>
+    </div>
+  </div>
+
+  <!-- Edit Session Modal -->
+  <div class="modal" id="modalEditSession">
+    <div class="modal-header">
+      <h3>✏️ Modifica sessione</h3>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Data</label>
+          <input type="date" id="esDate" />
+        </div>
+        <div class="form-group">
+          <label>Tipo</label>
+          <select id="esType">
+            <option value="recovery">🟢 Recupero</option>
+            <option value="base">🔵 Base Z2</option>
+            <option value="long">🔵 Lungo Z2</option>
+            <option value="sweetspot">🟡 Sweet Spot</option>
+            <option value="tempo">🟠 Tempo</option>
+            <option value="vo2max">🔴 VO2max</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Durata (min)</label>
+          <input type="number" id="esDuration" min="15" max="300" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Titolo</label>
+        <input type="text" id="esName" />
+      </div>
+      <div class="form-group">
+        <label>Descrizione</label>
+        <textarea id="esDescription" rows="3"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
+      <button class="btn btn-primary" onclick="saveSessionEdit()">Salva</button>
     </div>
   </div>
 

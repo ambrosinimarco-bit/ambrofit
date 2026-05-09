@@ -369,6 +369,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .wp-badge { font-size: .68rem; background: rgba(108,99,255,.15); color: var(--accent); border-radius: 4px; padding: .1rem .35rem; }
 .wp-outdoor { background: rgba(0,212,170,.1); color: #00d4aa; }
 .wp-power { font-size: .78rem; color: var(--accent); font-weight: 700; margin-left: auto; }
+.wp-actions { display: flex; gap: .35rem; margin-top: .5rem; }
+.wp-btn { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); border-radius: 5px; color: var(--text1); font-size: .8rem; padding: .2rem .45rem; cursor: pointer; transition: background .12s; }
+.wp-btn:hover { background: rgba(255,255,255,.14); }
+.wp-btn-del:hover { background: rgba(255,80,80,.2); border-color: var(--danger); }
 
 /* ─── Responsive ────────────────────────────────────────────────── */
 @media (max-width: 900px) {

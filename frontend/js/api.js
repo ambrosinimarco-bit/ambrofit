@@ -57,6 +57,10 @@ const api = {
     method: 'POST',
     body: { user_id: uid, plan_name: planName, sessions },
   }),
+  generateSessionZwo: (name, description, segments, ftp = 202) => apiFetch('/api/training/generate-session-zwo', {
+    method: 'POST',
+    body: { name, description, segments, ftp },
+  }),
   generateZwo:    (uid, sessionType, durationMin) => apiFetch('/api/training/generate-zwo', {
     method: 'POST',
     body: { user_id: uid, session_type: sessionType, duration_min: durationMin },
