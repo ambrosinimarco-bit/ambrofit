@@ -1,3 +1,4 @@
+// v1.0.5
 // ─── State ────────────────────────────────────────────────────────
 let USER_ID = localStorage.getItem('fitness_user_id') || '';
 let nutritionDate = new Date().toLocaleDateString('sv-SE');
