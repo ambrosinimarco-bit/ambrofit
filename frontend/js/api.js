@@ -50,7 +50,8 @@ const api = {
   getSessions:    (uid, days=14) => apiFetch(`/api/training/sessions/${uid}?days=${days}`),
 
   // Strava
-  syncStrava:     (uid) => apiFetch(`/api/strava/sync/${uid}`, { method: 'POST' }),
+  syncStrava:       (uid) => apiFetch(`/api/strava/sync/${uid}`, { method: 'POST' }),
+  resyncAllStrava:  (uid, days=90) => apiFetch(`/api/strava/resync-all/${uid}?days=${days}`, { method: 'POST' }),
 
   // Exercises
   getRoutines:    (uid) => apiFetch(`/api/exercises/?user_id=${uid}`),

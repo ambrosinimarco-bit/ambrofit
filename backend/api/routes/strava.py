@@ -79,6 +79,20 @@ async def manual_sync(user_id: str, days: int = 30):
     return {"imported": len(imported), "activities": imported}
 
 
+@router.post("/resync-all/{user_id}")
+async def resync_all(user_id: str, days: int = 90):
+    """Re-importa tutte le attività Strava con upsert completo.
+
+    Aggiorna le attività già presenti con i nuovi campi (potenza, cadenza, NP).
+    Usa days=365 per coprire un anno intero.
+    """
+    try:
+        result = await strava_service.resync_all_activities(user_id, days)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post("/register-webhook")
 async def register_webhook():
     result = await strava_service.register_webhook()

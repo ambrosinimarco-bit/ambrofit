@@ -665,6 +665,24 @@ async function syncStrava() {
   loadActivities();
 }
 
+async function resyncAllStrava() {
+  if (!confirm('Re-sync completo: aggiorna tutte le attività degli ultimi 90 giorni con potenza, cadenza e NP.\n\nPuò richiedere qualche secondo. Continuare?')) return;
+  const btn = event.target;
+  const orig = btn.textContent;
+  btn.textContent = '⏳ In corso...';
+  btn.disabled = true;
+  try {
+    const result = await api.resyncAllStrava(USER_ID, 90);
+    alert(`Re-sync completato:\n• ${result.updated} attività aggiornate\n• ${result.inserted} nuove importate\n• ${result.errors} errori\n• Totale Strava: ${result.total}`);
+    loadActivities();
+  } catch (e) {
+    alert('Errore: ' + e.message);
+  } finally {
+    btn.textContent = orig;
+    btn.disabled = false;
+  }
+}
+
 // ─── Peso rapido ──────────────────────────────────────────────────
 function openCalorieBruciateModal() {
   openModal('modalCalorieBruciate');

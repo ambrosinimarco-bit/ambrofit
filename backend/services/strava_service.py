@@ -123,13 +123,45 @@ def _map_activity(act: dict, user_id: str) -> dict:
     }
 
 
-async def sync_recent_activities(user_id: str, days: int = 30) -> list[dict]:
-    """Sincronizza le attività recenti da Strava.
+async def _fetch_pages(client, headers: dict, after_ts: int) -> list[dict]:
+    """Scarica tutte le pagine di attività Strava (100 per pagina)."""
+    all_activities = []
+    page = 1
+    while True:
+        resp = await client.get(
+            f"{STRAVA_API_BASE}/athlete/activities",
+            headers=headers,
+            params={"after": after_ts, "per_page": 100, "page": page},
+        )
+        resp.raise_for_status()
+        batch = resp.json()
+        if not batch:
+            break
+        all_activities.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    return all_activities
 
-    Per le ride con power meter (device_watts=True) esegue una seconda
-    chiamata al detail endpoint per recuperare weighted_average_watts (NP),
-    che non è disponibile nell'endpoint lista.
-    """
+
+async def _enrich_with_np(client, headers: dict, activities: list) -> None:
+    """Aggiunge weighted_average_watts (NP) alle ride con power meter, in-place."""
+    for act in activities:
+        sport = act.get("sport_type", act.get("type", ""))
+        if act.get("device_watts") and SPORT_TYPE_MAP.get(sport, "other") == "ride":
+            try:
+                det = await client.get(
+                    f"{STRAVA_API_BASE}/activities/{act['id']}",
+                    headers=headers,
+                )
+                if det.status_code == 200:
+                    act["weighted_average_watts"] = det.json().get("weighted_average_watts")
+            except Exception:
+                pass
+
+
+async def sync_recent_activities(user_id: str, days: int = 30) -> list[dict]:
+    """Sincronizza le attività recenti da Strava (solo inserimento, no update)."""
     token = await get_valid_token(user_id)
     if not token:
         return []
@@ -139,32 +171,8 @@ async def sync_recent_activities(user_id: str, days: int = 30) -> list[dict]:
     headers = {"Authorization": f"Bearer {token}"}
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.get(
-            f"{STRAVA_API_BASE}/athlete/activities",
-            headers=headers,
-            params={"after": after_ts, "per_page": 100},
-        )
-        resp.raise_for_status()
-        activities = resp.json()
-
-        # Fetch detail endpoint for power-meter rides to get NP (weighted_average_watts).
-        # average_watts and average_cadence are already in the list response.
-        for act in activities:
-            sport = act.get("sport_type", act.get("type", ""))
-            is_power_ride = (
-                act.get("device_watts")
-                and SPORT_TYPE_MAP.get(sport, "other") == "ride"
-            )
-            if is_power_ride:
-                try:
-                    det = await client.get(
-                        f"{STRAVA_API_BASE}/activities/{act['id']}",
-                        headers=headers,
-                    )
-                    if det.status_code == 200:
-                        act["weighted_average_watts"] = det.json().get("weighted_average_watts")
-                except Exception:
-                    pass
+        activities = await _fetch_pages(client, headers, after_ts)
+        await _enrich_with_np(client, headers, activities)
 
     imported = []
     for act in activities:
@@ -179,6 +187,59 @@ async def sync_recent_activities(user_id: str, days: int = 30) -> list[dict]:
             continue
 
     return imported
+
+
+async def resync_all_activities(user_id: str, days: int = 90) -> dict:
+    """Re-importa tutte le attività Strava con upsert completo.
+
+    A differenza di sync_recent_activities, aggiorna anche le attività
+    già presenti nel DB con i nuovi campi (potenza, cadenza, NP).
+    Supporta paginazione per utenti con molte attività.
+    """
+    token = await get_valid_token(user_id)
+    if not token:
+        raise ValueError("Token Strava non disponibile. Ricollegare l'account.")
+
+    db = get_supabase()
+    after_ts = int((datetime.now(timezone.utc).timestamp()) - days * 86400)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        activities = await _fetch_pages(client, headers, after_ts)
+        await _enrich_with_np(client, headers, activities)
+
+    inserted = updated = errors = 0
+
+    for act in activities:
+        try:
+            mapped = _map_activity(act, user_id)
+            strava_id = str(act["id"])
+            existing = db.table("activities").select("id").eq("strava_id", strava_id).execute()
+            if existing.data:
+                # Aggiorna solo i campi che potrebbero essere mancanti/nuovi
+                update_fields = {k: mapped[k] for k in (
+                    "avg_power_w", "normalized_power_w", "avg_cadence_rpm",
+                    "avg_heart_rate", "max_heart_rate", "elevation_m",
+                    "distance_km", "duration_min", "calories", "name",
+                ) if mapped.get(k) is not None}
+                if update_fields:
+                    db.table("activities").update(update_fields)\
+                        .eq("strava_id", strava_id).execute()
+                updated += 1
+            else:
+                db.table("activities").insert(mapped).execute()
+                inserted += 1
+        except Exception:
+            errors += 1
+            continue
+
+    return {
+        "total": len(activities),
+        "inserted": inserted,
+        "updated": updated,
+        "errors": errors,
+        "days": days,
+    }
 
 
 async def import_single_activity(user_id: str, strava_activity_id: int) -> dict | None:
