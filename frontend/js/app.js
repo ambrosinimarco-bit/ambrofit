@@ -268,15 +268,35 @@ function activityItemHtml(a) {
     a.duration_min && `⏱ ${a.duration_min}min`,
     a.distance_km && `📍 ${a.distance_km}km`,
     a.elevation_m && `⛰ ${a.elevation_m}m`,
-    a.calories && `🔥 ${a.calories}kcal`,
+    a.avg_heart_rate && `❤️ ${a.avg_heart_rate}bpm`,
+    a.rpe && `RPE ${a.rpe}/10`,
   ].filter(Boolean);
+
+  const conditionPills = [
+    a.sleep_hours   && `💤 ${a.sleep_hours}h sonno`,
+    a.stress_level  && `😤 stress ${a.stress_level}/10`,
+  ].filter(Boolean);
+
+  const conditionRows = [
+    a.condition_pre    && `<div class="condition-row"><span class="condition-label">Prima:</span> <span>${esc(a.condition_pre)}</span></div>`,
+    a.condition_during && `<div class="condition-row"><span class="condition-label">Durante:</span> <span>${esc(a.condition_during)}</span></div>`,
+    a.condition_post   && `<div class="condition-row"><span class="condition-label">Dopo:</span> <span>${esc(a.condition_post)}</span></div>`,
+    a.physical_notes   && `<div class="condition-row" style="color:var(--danger)"><span class="condition-label">⚠ Fisico:</span> <span>${esc(a.physical_notes)}</span></div>`,
+  ].filter(Boolean);
+
+  const hasCondition = conditionPills.length || conditionRows.length;
 
   return `
     <div class="activity-item">
       <span class="activity-type-icon">${icon}</span>
-      <div class="activity-info">
+      <div class="activity-info" style="flex:1;min-width:0">
         <div class="activity-name">${esc(a.name)}</div>
         <div class="activity-meta">${a.activity_date} · ${a.source || 'manual'}</div>
+        ${hasCondition ? `
+        <div class="activity-condition">
+          ${conditionPills.map(p => `<span class="condition-pill">${p}</span>`).join('')}
+          ${conditionRows.join('')}
+        </div>` : ''}
       </div>
       <div class="activity-stats">
         ${stats.map(s => `<span class="stat-pill">${s}</span>`).join('')}

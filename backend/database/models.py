@@ -63,6 +63,11 @@ class ActivityCreate(BaseModel):
     rpe: Optional[int] = None
     physical_notes: Optional[str] = None
     check_in_done: Optional[bool] = False
+    condition_pre: Optional[str] = None
+    condition_during: Optional[str] = None
+    condition_post: Optional[str] = None
+    sleep_hours: Optional[float] = None
+    stress_level: Optional[int] = None
 
 
 class ActivityOut(ActivityCreate):

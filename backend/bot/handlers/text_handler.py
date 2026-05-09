@@ -45,29 +45,53 @@ async def dispatch_message(
             await _handle_correction(update, db, user_id, data, text)
 
         elif data_type == "activity":
-            result = db.table("activities").insert({
+            # Recupera eventuale pre-condizione registrata oggi in daily_health
+            today_str = date.today().isoformat()
+            pre_cond_res = db.table("daily_health").select("pre_condition,sleep_hours,stress_score")\
+                .eq("user_id", user_id).eq("health_date", today_str).limit(1).execute()
+            pre_cond_data = (pre_cond_res.data or [{}])[0]
+
+            db.table("activities").insert({
                 "user_id": user_id,
-                "activity_date": date.today().isoformat(),
+                "activity_date": today_str,
                 "activity_type": data.get("activity_type", "other"),
                 "name": data.get("name", text[:50]),
                 "duration_min": data.get("duration_min", 0),
                 "distance_km": data.get("distance_km"),
                 "notes": text,
                 "source": source,
+                "condition_pre": pre_cond_data.get("pre_condition") or None,
+                "sleep_hours": pre_cond_data.get("sleep_hours") or None,
+                "stress_level": pre_cond_data.get("stress_score") or None,
             }).execute()
+
             activity_msg = (
                 f"✅ *Attività registrata:* {data.get('name', 'Attività')}\n"
                 f"⏱ `{data.get('duration_min', 0)} min`"
                 + (f" · 📍 `{data.get('distance_km')} km`" if data.get("distance_km") else "")
             )
+            if pre_cond_data.get("pre_condition"):
+                activity_msg += f"\n💭 _Pre-condizione rilevata: {pre_cond_data['pre_condition']}_"
+
             activity_msg += (
-                "\n\n📊 *Check-in:* Come ti sei sentito? Rispondimi con un voto da 1 a 10 "
-                "e segnala eventuali problemi fisici (es. '8, tutto ok' o '6, fastidio all\'inguine')"
+                "\n\n📋 *Check-in post-sessione* — rispondimi liberamente:\n"
+                "• Come stavi *PRIMA* di iniziare? _(riposato, stanco, gambe pesanti...)_\n"
+                "• Com'è andata *DURANTE*? _(bene, faticoso, dolori...)_\n"
+                "• Come ti senti *ORA*? _(soddisfatto, esausto, fastidi fisici...)_\n"
+                "• Ore di sonno ieri notte?\n"
+                "• Livello stress oggi 1-10?\n"
+                "• Voto RPE 1-10 per l'intensità percepita\n\n"
+                "_Puoi rispondere in un unico messaggio, es: \"Ero stanco. "
+                "Durante è andata bene fino al km 30 poi ho sofferto. "
+                "Ora mi sento ok. Dormito 6h, stress 4, RPE 7\"_"
             )
             await update.message.reply_text(activity_msg, parse_mode="Markdown")
 
         elif data_type == "check_in":
             await _handle_check_in(update, db, user_id, data)
+
+        elif data_type == "pre_condition":
+            await _handle_pre_condition(update, db, user_id, data)
 
         elif data_type == "coach":
             from backend.services.coach_service import get_coach_response
@@ -129,59 +153,101 @@ async def dispatch_message(
 
 
 async def _handle_check_in(update, db, user_id: str, data: dict) -> None:
-    """Aggiorna l'ultima attività del giorno senza check-in con RPE e note fisiche."""
-    rpe = data.get("rpe")
-    physical_notes = data.get("physical_notes") or ""
+    """Aggiorna l'ultima attività del giorno con tutti i dati di percezione."""
+    today = date.today().isoformat()
 
     # Trova l'ultima attività del giorno senza check-in
-    today = date.today().isoformat()
     result = db.table("activities").select("*").eq("user_id", user_id)\
         .eq("activity_date", today).eq("check_in_done", False)\
         .order("created_at", desc=True).limit(1).execute()
-
     if not result.data:
-        # Prova anche senza il filtro check_in_done (colonna potrebbe non esistere ancora)
         result = db.table("activities").select("*").eq("user_id", user_id)\
-            .eq("activity_date", today)\
-            .order("created_at", desc=True).limit(1).execute()
-
+            .eq("activity_date", today).order("created_at", desc=True).limit(1).execute()
     if not result.data:
         await update.message.reply_text(
-            "Non trovo attività registrate oggi da aggiornare con il check-in. "
-            "Registra prima un'attività!"
+            "Non trovo attività registrate oggi da aggiornare. Registra prima un'attività!"
         )
         return
 
     activity = result.data[0]
     update_data = {"check_in_done": True}
-    if rpe is not None:
-        update_data["rpe"] = int(rpe)
-    if physical_notes:
-        update_data["physical_notes"] = physical_notes
+
+    rpe             = data.get("rpe")
+    physical_notes  = data.get("physical_notes") or ""
+    condition_pre   = data.get("condition_pre") or ""
+    condition_during= data.get("condition_during") or ""
+    condition_post  = data.get("condition_post") or ""
+    sleep_hours     = data.get("sleep_hours")
+    stress_level    = data.get("stress_level")
+
+    if rpe is not None:         update_data["rpe"] = int(rpe)
+    if physical_notes:          update_data["physical_notes"] = physical_notes
+    if condition_pre:           update_data["condition_pre"] = condition_pre
+    if condition_during:        update_data["condition_during"] = condition_during
+    if condition_post:          update_data["condition_post"] = condition_post
+    if sleep_hours is not None: update_data["sleep_hours"] = float(sleep_hours)
+    if stress_level is not None:update_data["stress_level"] = int(stress_level)
 
     db.table("activities").update(update_data).eq("id", activity["id"]).execute()
 
-    # Risposta coaching basata su RPE
-    if rpe is not None:
-        rpe_int = int(rpe)
-        if rpe_int <= 6:
-            coaching_comment = "Bel recupero, hai gestito bene il carico."
-        elif rpe_int <= 8:
-            coaching_comment = "Perfetto range per l'allenamento base."
-        else:
-            coaching_comment = "Sessione impegnativa, monitora il recupero nelle prossime 48h."
-        reply = (
-            f"✅ *Check-in registrato per:* {activity.get('name', 'Attività')}\n"
-            f"📊 RPE: `{rpe}/10`"
-        )
-        if physical_notes:
-            reply += f"\n📝 Note: _{physical_notes}_"
-        reply += f"\n\n🎯 {coaching_comment}"
-    else:
-        reply = f"✅ *Check-in registrato per:* {activity.get('name', 'Attività')}"
-        if physical_notes:
-            reply += f"\n📝 Note: _{physical_notes}_"
+    # Aggiorna anche daily_health con sleep/stress se forniti
+    if sleep_hours is not None or stress_level is not None:
+        health_update = {}
+        if sleep_hours is not None:  health_update["sleep_hours"] = float(sleep_hours)
+        if stress_level is not None: health_update["stress_score"] = int(stress_level)
+        _upsert_health(db, user_id, health_update)
 
+    # Risposta coaching
+    rpe_int = int(rpe) if rpe is not None else None
+    if rpe_int is not None:
+        if rpe_int <= 5:
+            coaching_comment = "Sessione facile — buon recupero attivo."
+        elif rpe_int <= 7:
+            coaching_comment = "Range ideale per l'allenamento base, ottima gestione."
+        elif rpe_int <= 8:
+            coaching_comment = "Buona intensità — monitora come recuperi nelle 24h."
+        else:
+            coaching_comment = "Sessione molto impegnativa — priorità assoluta al recupero nelle prossime 48h."
+    else:
+        coaching_comment = ""
+
+    reply = f"✅ *Check-in registrato per:* {activity.get('name', 'Attività')}\n"
+    if condition_pre:    reply += f"😴 Prima: _{condition_pre}_\n"
+    if condition_during: reply += f"🚴 Durante: _{condition_during}_\n"
+    if condition_post:   reply += f"🏁 Dopo: _{condition_post}_\n"
+    if sleep_hours:      reply += f"💤 Sonno: `{sleep_hours}h`\n"
+    if stress_level:     reply += f"😤 Stress: `{stress_level}/10`\n"
+    if rpe_int:          reply += f"📊 RPE: `{rpe_int}/10`\n"
+    if physical_notes:   reply += f"⚠ Fisico: _{physical_notes}_\n"
+    if coaching_comment: reply += f"\n🎯 {coaching_comment}"
+
+    await update.message.reply_text(reply, parse_mode="Markdown")
+
+
+async def _handle_pre_condition(update, db, user_id: str, data: dict) -> None:
+    """Salva la condizione pre-allenamento nel profilo giornaliero."""
+    condition_pre = data.get("condition_pre") or ""
+    sleep_hours   = data.get("sleep_hours")
+    stress_level  = data.get("stress_level")
+
+    health_update = {}
+    if condition_pre:            health_update["pre_condition"] = condition_pre
+    if sleep_hours is not None:  health_update["sleep_hours"] = float(sleep_hours)
+    if stress_level is not None: health_update["stress_score"] = int(stress_level)
+
+    if not health_update:
+        await update.message.reply_text("Non ho capito. Dimmi come ti senti o quante ore hai dormito.")
+        return
+
+    _upsert_health(db, user_id, health_update)
+
+    parts = []
+    if condition_pre: parts.append(f"condizione: _{condition_pre}_")
+    if sleep_hours:   parts.append(f"sonno: `{sleep_hours}h`")
+    if stress_level:  parts.append(f"stress: `{stress_level}/10`")
+
+    reply = "💭 *Pre-condizione registrata:* " + " | ".join(parts)
+    reply += "\n\n_La terrò in conto quando registrerai l'attività di oggi._"
     await update.message.reply_text(reply, parse_mode="Markdown")
 
 

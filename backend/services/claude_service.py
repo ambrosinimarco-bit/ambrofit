@@ -187,7 +187,7 @@ Messaggio: "{transcript}"
 
 Rispondi con JSON esatto:
 {{
-  "type": "meal|activity|total_calories_iphone|weight|sleep|steps|correction|status|check_in|coach|zwo_request|general",
+  "type": "meal|activity|total_calories_iphone|weight|sleep|steps|correction|status|check_in|pre_condition|coach|zwo_request|general",
   "data": {{
     "meal_name": "...", "calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0, "meal_time": "snack",
     "activity_type": "run|ride|swim|walk|strength|other", "duration_min": 0, "distance_km": null, "name": "...",
@@ -197,7 +197,11 @@ Rispondi con JSON esatto:
     "description": "cosa correggere in italiano",
     "corrections": {{}},
     "rpe": null,
-    "physical_notes": null
+    "physical_notes": null,
+    "condition_pre": null,
+    "condition_during": null,
+    "condition_post": null,
+    "stress_level": null
   }},
   "confidence": "high|medium|low"
 }}
@@ -208,9 +212,10 @@ Regole per il tipo:
 - activity: attività sportiva specifica con durata. Es: "ho fatto 1 ora di bici"
 - meal: cibo mangiato. Es: "ho mangiato una mela"
 - status: vuole sapere come sta oggi / quanto può mangiare. Es: "come sto oggi", "dimmi la situazione", "quanto posso ancora mangiare", "status", "riepilogo"
-- check_in: l'utente valuta la sessione appena fatta (es. "8", "7/10", "8, qualche fastidio all'inguine", "mi sono sentito bene, darei un 9"). Estrai: rpe (int 1-10), physical_notes (str, optional). Il messaggio è solo un voto numerico o voto con breve commento fisico.
-- coach: domanda/frase di coaching (es. "come sto andando", "ho saltato la sessione di mercoledì", "ho fastidio all'inguine", "crea un piano per questa settimana", "oggi mi sono sentito bene con 155W di media"). NON usare per registrare dati specifici come pasti o attività con durata.
-- zwo_request: richiesta esplicita di generare file .zwo per allenamento indoor (es. "crea una sessione z2 45 minuti", "generami un workout sweetspot di 1 ora", "voglio un allenamento VO2max").
+- check_in: l'utente risponde al check-in post-sessione con qualsiasi combinazione di: voto RPE, condizione pre/durante/post, ore sonno, stress. Es: "8, ero stanco prima ma è andata bene", "RPE 7, dormito 6h, stress 4". Estrai tutti i campi disponibili: rpe (int 1-10), physical_notes, condition_pre, condition_during, condition_post, sleep_hours, stress_level.
+- pre_condition: l'utente descrive come si sente PRIMA di allenarsi o come ha dormito, SENZA registrare un'attività specifica con durata. Es: "stamattina mi sento stanco", "ho dormito 5 ore, gambe pesanti", "oggi sono molto stressato". Estrai: condition_pre, sleep_hours (se menzionate), stress_level (se menzionato).
+- coach: domanda/frase di coaching (es. "come sto andando", "ho saltato la sessione di mercoledì", "crea un piano per questa settimana"). NON usare per registrare dati specifici.
+- zwo_request: richiesta esplicita di generare file .zwo per allenamento indoor (es. "crea una sessione z2 45 minuti", "generami un workout sweetspot di 1 ora").
 """
 
     response = client.messages.create(
