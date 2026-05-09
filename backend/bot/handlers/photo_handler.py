@@ -3,7 +3,7 @@ import logging
 import re
 from datetime import date, timedelta
 
-print("photo_handler v2 loaded", flush=True)
+print("photo_handler v3 loaded (job_queue buffer)", flush=True)
 logger = logging.getLogger(__name__)
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -64,7 +64,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         photo_type = await asyncio.to_thread(classify_photo_type, image_bytes)
 
     if photo_type == "garmin":
-        await _buffer_garmin_photo(update, user_id, image_bytes)
+        await _buffer_garmin_photo(update, context, user_id, image_bytes)
         return
 
     # Food / label: process immediately
@@ -84,39 +84,63 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(f"Errore nell'analisi della foto: {e}")
 
 
-async def _buffer_garmin_photo(update: Update, user_id: str, image_bytes: bytes) -> None:
-    """Add image to user's pending batch, reset the 10-second flush timer."""
+async def _buffer_garmin_photo(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: str,
+    image_bytes: bytes,
+) -> None:
+    """Add image to user's pending batch, reset the 10s PTB job-queue flush timer."""
+    job_name = f"garmin_flush_{user_id}"
+
     if user_id in _pending_garmin:
-        existing_task = _pending_garmin[user_id].get("task")
-        if existing_task and not existing_task.done():
-            existing_task.cancel()
         _pending_garmin[user_id]["images"].append(image_bytes)
         _pending_garmin[user_id]["update"] = update
         n = len(_pending_garmin[user_id]["images"])
+        logger.info("garmin_buffer: user=%s screenshot=%d added to batch", user_id, n)
         await update.message.reply_text(
-            f"📸 Screenshot {n} aggiunto al batch. Aspetto altri 10s..."
+            f"📸 Screenshot {n} aggiunto al batch. Aspetto altri {_BUFFER_SECONDS}s..."
         )
     else:
         _pending_garmin[user_id] = {"images": [image_bytes], "update": update}
+        logger.info("garmin_buffer: user=%s new batch started (1 screenshot)", user_id)
         await update.message.reply_text(
-            "📸 Screenshot Garmin ricevuto. Aspetto altri screenshot per 10s prima di elaborare..."
+            f"📸 Screenshot Garmin ricevuto. Aspetto altri screenshot per {_BUFFER_SECONDS}s prima di elaborare..."
         )
 
-    task = asyncio.create_task(_flush_garmin_batch(user_id))
-    _pending_garmin[user_id]["task"] = task
+    # Cancel any existing scheduled flush for this user, then reschedule
+    for job in context.application.job_queue.get_jobs_by_name(job_name):
+        job.schedule_removal()
+        logger.info("garmin_buffer: cancelled previous flush job for user=%s", user_id)
+
+    context.application.job_queue.run_once(
+        _flush_garmin_job,
+        when=_BUFFER_SECONDS,
+        data=user_id,
+        name=job_name,
+    )
+    logger.info("garmin_buffer: flush job scheduled in %ds for user=%s", _BUFFER_SECONDS, user_id)
+
+
+async def _flush_garmin_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """PTB job_queue callback — fires after buffer window expires."""
+    user_id: str = context.job.data
+    logger.info("garmin_flush_job: timer fired for user=%s", user_id)
+    await _flush_garmin_batch(user_id)
 
 
 async def _flush_garmin_batch(user_id: str) -> None:
-    """After buffer window expires, analyze all buffered images in one Claude call."""
-    await asyncio.sleep(_BUFFER_SECONDS)
-
+    """Analyze all buffered images in one Claude call, save, send report."""
+    logger.info("garmin_flush_batch: starting for user=%s", user_id)
     batch = _pending_garmin.pop(user_id, None)
     if not batch:
+        logger.warning("garmin_flush_batch: no pending batch for user=%s (already flushed?)", user_id)
         return
 
     update: Update = batch["update"]
     images: list[bytes] = batch["images"]
     n = len(images)
+    logger.info("garmin_flush_batch: processing %d image(s) for user=%s", n, user_id)
 
     await update.message.reply_text(
         f"🔄 Elaboro {n} screenshot Garmin {'insieme' if n > 1 else ''}..."
@@ -132,6 +156,7 @@ async def _flush_garmin_batch(user_id: str) -> None:
             await _send_activity_report(update, db, user_id, result, activity_id)
 
     except Exception as e:
+        logger.exception("garmin_flush_batch: error for user=%s: %s", user_id, e)
         await update.message.reply_text(f"Errore nell'analisi degli screenshot: {e}")
 
 
