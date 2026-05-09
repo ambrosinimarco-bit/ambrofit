@@ -182,7 +182,7 @@ Rispondi con JSON esatto (usa null per i valori non visibili):
 
 def analyze_voice_transcript(transcript: str) -> dict:
     """Interpreta un messaggio (testo o voce) e determina il tipo di dato o correzione."""
-    prompt = f"""Analizza questo messaggio e determina cosa vuole registrare o correggere l'utente.
+    prompt = f"""Analizza questo messaggio di un atleta ciclista e determina cosa vuole fare.
 Messaggio: "{transcript}"
 
 Rispondi con JSON esatto:
@@ -206,16 +206,31 @@ Rispondi con JSON esatto:
   "confidence": "high|medium|low"
 }}
 
+REGOLA PRIORITARIA: Se il messaggio contiene "?" oppure inizia con una parola interrogativa (quale, quali, come, quando, perché, cosa, chi, dove, quanto, dimmi, spiegami, parlami), il tipo DEVE essere "coach" o "status" — MAI "meal" o "activity". Una domanda non è mai un input alimentare.
+
 Regole per il tipo:
-- total_calories_iphone: usa quando l'utente registra il TOTALE calorie della giornata da iPhone/Apple Fitness (include già BMR+movimento+sport). Es: "le mie calorie totali sono 2400", "iPhone fitness: 2800 kcal", "calorie totali giornata 2350"
-- correction: usa quando corregge dati precedenti. Es: "correggimi l'ultimo pasto", "la mela pesava 150g non 200g", "ho sbagliato il peso di prima"
-- activity: attività sportiva specifica con durata. Es: "ho fatto 1 ora di bici"
-- meal: cibo mangiato. Es: "ho mangiato una mela"
-- status: vuole sapere come sta oggi / quanto può mangiare. Es: "come sto oggi", "dimmi la situazione", "quanto posso ancora mangiare", "status", "riepilogo"
-- check_in: l'utente risponde al check-in post-sessione con qualsiasi combinazione di: voto RPE, condizione pre/durante/post, ore sonno, stress. Es: "8, ero stanco prima ma è andata bene", "RPE 7, dormito 6h, stress 4". Estrai tutti i campi disponibili: rpe (int 1-10), physical_notes, condition_pre, condition_during, condition_post, sleep_hours, stress_level.
-- pre_condition: l'utente descrive come si sente PRIMA di allenarsi o come ha dormito, SENZA registrare un'attività specifica con durata. Es: "stamattina mi sento stanco", "ho dormito 5 ore, gambe pesanti", "oggi sono molto stressato". Estrai: condition_pre, sleep_hours (se menzionate), stress_level (se menzionato).
-- coach: domanda/frase di coaching (es. "come sto andando", "ho saltato la sessione di mercoledì", "crea un piano per questa settimana"). NON usare per registrare dati specifici.
-- zwo_request: richiesta esplicita di generare file .zwo per allenamento indoor (es. "crea una sessione z2 45 minuti", "generami un workout sweetspot di 1 ora").
+- meal: SOLO se l'utente dichiara di aver mangiato qualcosa di concreto con quantità o descrizione. Es: "ho mangiato una mela", "pasta 200g al pomodoro", "colazione: yogurt e cereali". NON usare per domande o richieste.
+- activity: attività sportiva specifica con durata dichiarata. Es: "ho fatto 1 ora di bici", "corsa 45 minuti". NON usare per domande su attività.
+- total_calories_iphone: TOTALE calorie giornata da iPhone/Apple Fitness. Es: "le mie calorie totali sono 2400", "iPhone fitness: 2800 kcal"
+- weight: peso corporeo dichiarato. Es: "peso 75.2 kg oggi"
+- sleep: ore di sonno dichiarate. Es: "ho dormito 7 ore"
+- steps: passi dichiarati. Es: "oggi 9000 passi"
+- correction: correzione di un dato precedente. Es: "correggimi l'ultimo pasto", "la mela pesava 150g non 200g"
+- status: vuole il riepilogo della giornata. Es: "come sto oggi", "quanto posso ancora mangiare", "status", "riepilogo"
+- check_in: risposta al check-in post-sessione. Es: "RPE 7, dormito 6h, stress 4", "8, ero stanco ma è andata bene". Estrai: rpe, condition_pre, condition_during, condition_post, sleep_hours, stress_level.
+- pre_condition: descrive come si sente prima di allenarsi, senza registrare attività. Es: "mi sento stanco", "gambe pesanti oggi"
+- coach: qualsiasi domanda o richiesta che non sia registrazione dati. Usare per: domande su FTP/zone/potenza ("quale FTP hai usato?", "quali sono le mie zone?", "che potenza devo tenere?"), domande sull'allenamento ("come sto andando?", "ho saltato la sessione"), richieste di analisi, consigli, motivazione. Es COACH: "quale FTP hai usato?", "quali sono le mie zone di potenza?", "come sto andando con l'allenamento?", "perché mi sento stanco?", "cosa devo fare domani?"
+- zwo_request: richiesta di generare file .zwo per indoor. Es: "crea una sessione z2 45 minuti", "generami un workout sweetspot di 1 ora"
+
+ESEMPI DI CLASSIFICAZIONE CORRETTA:
+✅ "quale FTP hai usato?" → coach (domanda su parametro)
+✅ "quali sono le mie zone di potenza?" → coach (domanda su profilo)
+✅ "che potenza devo tenere in Z2?" → coach (domanda tecnica)
+✅ "ho mangiato una pasta" → meal (dichiarazione cibo consumato)
+✅ "ho fatto 1 ora di bici" → activity (attività con durata)
+✅ "come sto oggi?" → status (riepilogo giornata)
+❌ "quale FTP?" → NON meal
+❌ "come sono le mie zone?" → NON meal
 """
 
     response = client.messages.create(

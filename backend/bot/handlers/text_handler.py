@@ -15,6 +15,30 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await dispatch_message(update, context, user_id, text, source="telegram_text")
 
 
+_STATUS_HINTS = ('come sto', 'quanto posso', 'cosa posso mangiare', 'situazione oggi', 'riepilogo')
+_STRONG_INTERROGATIVES = (
+    'quale ', 'quali ', 'perché ', 'perche ', 'chi ', 'dove ',
+    'spiegami ', 'parlami ', 'descrivimi ', 'che ftp', 'che potenza',
+    'che zone', 'che watt', 'quali zone', 'qual è il mio', "qual è la mia",
+)
+
+
+def _quick_classify(text: str) -> str | None:
+    """Pre-filtro veloce senza Claude. Ritorna il tipo se il messaggio è inequivocabile, None altrimenti."""
+    t = text.strip()
+    t_lower = t.lower()
+
+    if '?' in t:
+        if any(p in t_lower for p in _STATUS_HINTS):
+            return 'status'
+        return 'coach'
+
+    if any(t_lower.startswith(s) for s in _STRONG_INTERROGATIVES):
+        return 'coach'
+
+    return None
+
+
 async def dispatch_message(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -24,9 +48,18 @@ async def dispatch_message(
 ) -> None:
     """Classifica il testo (o trascritto vocale) e smista all'azione corretta."""
     try:
-        classification = analyze_voice_transcript(text)
-        data_type = classification.get("type", "meal")
-        data = classification.get("data", {})
+        quick = _quick_classify(text)
+        if quick:
+            data_type = quick
+            data = {}
+        else:
+            classification = analyze_voice_transcript(text)
+            data_type = classification.get("type", "meal")
+            data = classification.get("data", {})
+            # Rete di sicurezza: mai classificare come pasto un messaggio che è una domanda
+            if data_type == "meal" and '?' in text:
+                data_type = "coach"
+                data = {}
         db = get_supabase()
 
         if data_type == "status":
