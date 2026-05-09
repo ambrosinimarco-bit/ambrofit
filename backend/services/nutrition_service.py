@@ -8,6 +8,16 @@ def calculate_bmr(weight_kg: float, height_cm: float, age: int, sex: str = "male
     return round(bmr + 5 if sex == "male" else bmr - 161)
 
 
+def calc_dynamic_macros(calories_out: float, weight_kg: float) -> tuple[int, int, int]:
+    """Calcola target macronutrienti dinamici per ciclista in allenamento.
+    Returns (protein_g, carbs_g, fat_g).
+    """
+    protein_g = round(weight_kg * 2)           # 2 g/kg fisso
+    fat_g = round(calories_out * 0.25 / 9)     # 25% delle kcal totali
+    carbs_g = max(50, round((calories_out - protein_g * 4 - fat_g * 9) / 4))
+    return protein_g, carbs_g, fat_g
+
+
 def get_daily_summary(user_id: str, target_date: date) -> dict:
     db = get_supabase()
     date_str = target_date.isoformat()
@@ -49,9 +59,18 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
         calories_out = activities_calories
 
     calorie_goal = user_data.get("daily_calorie_goal", 2400)
-    protein_goal = user_data.get("protein_goal_g", 150)
-    carbs_goal = user_data.get("carbs_goal_g", 280)
-    fat_goal = user_data.get("fat_goal_g", 75)
+
+    # Dynamic macro targets when we have reliable calories_out and body weight
+    _has_reliable_cal = bool(total_calories_iphone or bmr)
+    _weight_for_macros = weight  # already resolved: today's health entry or profile fallback
+    if _has_reliable_cal and _weight_for_macros:
+        protein_goal, carbs_goal, fat_goal = calc_dynamic_macros(calories_out, float(_weight_for_macros))
+        macro_targets_dynamic = True
+    else:
+        protein_goal = user_data.get("protein_goal_g", 150)
+        carbs_goal = user_data.get("carbs_goal_g", 280)
+        fat_goal = user_data.get("fat_goal_g", 75)
+        macro_targets_dynamic = False
 
     # Weight: use today's entry; fall back to latest available measurement
     weight_kg = health_data.get("weight_kg")
@@ -82,6 +101,7 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
         "protein_goal_g": protein_goal,
         "carbs_goal_g": carbs_goal,
         "fat_goal_g": fat_goal,
+        "macro_targets_dynamic": macro_targets_dynamic,
         "weight_kg": weight_kg,
         "steps": health_data.get("steps"),
         "sleep_hours": health_data.get("sleep_hours"),

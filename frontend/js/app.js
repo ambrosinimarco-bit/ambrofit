@@ -144,6 +144,7 @@ function renderKPIs(today) {
 }
 
 function renderMacros(today) {
+  const dynamic = today.macro_targets_dynamic;
   const macros = [
     { key: 'Protein', val: today.protein_g, goal: today.protein_goal_g },
     { key: 'Carbs',   val: today.carbs_g,   goal: today.carbs_goal_g },
@@ -151,7 +152,10 @@ function renderMacros(today) {
   ];
   macros.forEach(m => {
     setText('macro' + m.key, Math.round(m.val) + 'g');
-    setText('macro' + m.key + 'Goal', (m.goal || '—') + 'g');
+    const goalLabel = m.goal
+      ? Math.round(m.goal) + 'g' + (dynamic ? ' ⚡' : '')
+      : '—';
+    setText('macro' + m.key + 'Goal', goalLabel);
     const pct = m.goal ? Math.min(100, (m.val / m.goal) * 100) : 0;
     setWidth('macro' + m.key + 'Bar', pct + '%');
   });
