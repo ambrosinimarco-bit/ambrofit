@@ -1394,38 +1394,81 @@ function openWeeklyPlanModal() {
   openModal('modalWeeklyPlan');
 }
 
+let _planPollingJobId = null;
+
 async function generateWeeklyPlan() {
   const btn = document.getElementById('wpGenerateBtn');
   const errEl = document.getElementById('wpError');
   errEl.style.display = 'none';
   btn.disabled = true;
-  btn.textContent = '⏳ Claude sta pianificando...';
+  btn.textContent = '⏳ Avvio…';
 
   const period = document.getElementById('wpPeriod').value;
   const objective = document.getElementById('wpObjective').value;
   const availableDays = [...document.querySelectorAll('input[name="wpDay"]:checked')].map(el => el.value);
   const eventName = document.getElementById('wpEventName').value.trim() || null;
   const eventDate = document.getElementById('wpEventDate').value || null;
+  const userNotes = document.getElementById('wpNotes').value.trim() || null;
 
+  let jobId;
   try {
-    const userNotes = document.getElementById('wpNotes').value.trim() || null;
-    const data = await api.generateWeeklyPlan(USER_ID, {
-      period,
-      objective,
+    const res = await api.startWeeklyPlan(USER_ID, {
+      period, objective,
       available_days: availableDays,
       target_event_name: eventName,
       target_event_date: eventDate,
       user_notes: userNotes,
     });
-    _generatedPlan = data;
-    closeModal();
-    renderWeeklyPlanPreview(data);
+    jobId = res.job_id;
   } catch (err) {
     errEl.textContent = 'Errore: ' + err.message;
     errEl.style.display = 'block';
     btn.disabled = false;
     btn.textContent = '🧠 Genera piano';
+    return;
   }
+
+  closeModal();
+  document.getElementById('weeklyPlanPreview').style.display = 'none';
+  document.getElementById('trainingPlanHeader').innerHTML =
+    '<p style="color:var(--text2)">⏳ Claude sta pianificando…</p>';
+  _pollPlanJob(jobId, btn); // fire-and-forget: polling updates UI when ready
+}
+
+async function _pollPlanJob(jobId, btn) {
+  _planPollingJobId = jobId;
+  const MAX_POLLS = 40; // 40 × 3s = 120s max wait
+  for (let i = 0; i < MAX_POLLS; i++) {
+    await new Promise(r => setTimeout(r, 3000));
+    if (_planPollingJobId !== jobId) return; // superseded by a newer request
+
+    let data;
+    try { data = await api.getPlanStatus(jobId); }
+    catch (_) { continue; } // transient network error — keep polling
+
+    if (data.status === 'ready') {
+      _generatedPlan = data;
+      renderWeeklyPlanPreview(data);
+      btn.disabled = false;
+      btn.textContent = '🧠 Genera piano';
+      return;
+    }
+    if (data.status === 'error') {
+      document.getElementById('trainingPlanHeader').innerHTML =
+        '<p style="color:var(--danger)">❌ Errore nella generazione del piano</p>';
+      alert('Errore generazione piano:\n' + data.error);
+      btn.disabled = false;
+      btn.textContent = '🧠 Genera piano';
+      return;
+    }
+    // still pending — show elapsed time
+    document.getElementById('trainingPlanHeader').innerHTML =
+      `<p style="color:var(--text2)">⏳ Claude sta pianificando… ${(i + 1) * 3}s</p>`;
+  }
+  document.getElementById('trainingPlanHeader').innerHTML =
+    '<p style="color:var(--danger)">❌ Timeout: riprova</p>';
+  btn.disabled = false;
+  btn.textContent = '🧠 Genera piano';
 }
 
 function renderWeeklyPlanPreview(data) {

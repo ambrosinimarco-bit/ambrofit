@@ -2,7 +2,9 @@ import asyncio
 import json
 import logging
 import traceback
-from fastapi import APIRouter, HTTPException
+import uuid
+from datetime import datetime
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 logger = logging.getLogger(__name__)
 from pydantic import BaseModel
@@ -17,6 +19,26 @@ from backend.services.training_plan_service import (
 )
 
 router = APIRouter(prefix="/api/training", tags=["training"])
+
+# Ephemeral in-memory job store (per-process, fine for single-instance Railway deploy)
+_jobs: dict[str, dict] = {}
+
+
+async def _run_plan_job(job_id: str, body: "WeeklyPlanRequest") -> None:
+    from backend.services.plan_generator_service import generate_weekly_plan
+    try:
+        result = await asyncio.to_thread(
+            generate_weekly_plan,
+            body.user_id, body.period, body.objective,
+            body.available_days or None,
+            body.target_event_name, body.target_event_date, body.user_notes,
+        )
+        _jobs[job_id]["status"] = "ready"
+        _jobs[job_id]["result"] = result
+    except Exception:
+        logger.error("plan job %s ERROR:\n%s", job_id, traceback.format_exc())
+        _jobs[job_id]["status"] = "error"
+        _jobs[job_id]["error"] = traceback.format_exc().splitlines()[-1]
 
 
 @router.get("/plan/{user_id}")
@@ -72,28 +94,31 @@ class SaveWeeklyPlanRequest(BaseModel):
 
 
 @router.post("/generate-weekly-plan")
-async def generate_weekly_plan_endpoint(body: WeeklyPlanRequest):
-    from backend.services.plan_generator_service import generate_weekly_plan
-    logger.info(
-        "generate-weekly-plan: user=%s period=%s objective=%s days=%s",
-        body.user_id, body.period, body.objective, body.available_days,
-    )
-    try:
-        result = await asyncio.to_thread(
-            generate_weekly_plan,
-            body.user_id,
-            body.period,
-            body.objective,
-            body.available_days or None,
-            body.target_event_name,
-            body.target_event_date,
-            body.user_notes,
-        )
-        logger.info("generate-weekly-plan: OK sessions=%d", len(result.get("sessions", [])))
-        return result
-    except Exception as e:
-        logger.error("generate-weekly-plan ERROR:\n%s", traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
+async def generate_weekly_plan_endpoint(body: WeeklyPlanRequest, background_tasks: BackgroundTasks):
+    """Returns a job_id immediately; poll /plan-status/{job_id} for the result."""
+    # Clean up jobs older than 1 hour to avoid unbounded memory growth
+    now = datetime.utcnow().timestamp()
+    stale = [k for k, v in list(_jobs.items()) if now - v.get("ts", now) > 3600]
+    for k in stale:
+        _jobs.pop(k, None)
+
+    job_id = str(uuid.uuid4())
+    _jobs[job_id] = {"status": "pending", "ts": now}
+    background_tasks.add_task(_run_plan_job, job_id, body)
+    logger.info("plan job %s queued: user=%s period=%s", job_id, body.user_id, body.period)
+    return {"job_id": job_id}
+
+
+@router.get("/plan-status/{job_id}")
+def get_plan_status(job_id: str):
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job non trovato o scaduto")
+    if job["status"] == "ready":
+        return {"status": "ready", **job["result"]}
+    if job["status"] == "error":
+        return {"status": "error", "error": job["error"]}
+    return {"status": "pending"}
 
 
 @router.post("/save-weekly-plan")
