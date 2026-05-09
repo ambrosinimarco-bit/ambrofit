@@ -180,6 +180,106 @@ Rispondi con JSON esatto (usa null per i valori non visibili):
     return json.loads(response.content[0].text)
 
 
+def classify_photo_type(image_bytes: bytes) -> str:
+    """Fast visual classification: 'garmin' | 'food' | 'label'.
+    Uses Haiku for low latency — only called when caption gives no signal.
+    """
+    b64 = _image_to_base64(image_bytes)
+    resp = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=15,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}},
+                {"type": "text", "text": (
+                    "Look at this image. Reply with exactly one word:\n"
+                    "- 'garmin' if it shows fitness/sports data (heart rate, power, Body Battery, "
+                    "HRV, km, steps, sleep, activity summary from Garmin or similar app)\n"
+                    "- 'label' if it shows a nutrition facts/ingredients label\n"
+                    "- 'food' for anything else (meal, food photo)\n"
+                    "One word only."
+                )},
+            ],
+        }],
+    )
+    word = resp.content[0].text.strip().lower().split()[0]
+    if word == "garmin":
+        return "garmin"
+    if word == "label":
+        return "label"
+    return "food"
+
+
+def generate_activity_report(
+    garmin_data: dict,
+    recent_acts: list[dict],
+    profile: dict,
+    ftp: int = 202,
+) -> str:
+    """Generates a concise post-activity coaching report in Italian Markdown."""
+    # Build recent activity summary (last 7, most relevant fields)
+    recent_lines = []
+    for a in recent_acts[:7]:
+        parts = [a.get("activity_date", ""), a.get("name", "")]
+        if a.get("duration_min"):
+            parts.append(f"{int(a['duration_min'])}min")
+        if a.get("avg_power_w"):
+            parts.append(f"{a['avg_power_w']}W")
+        if a.get("tss"):
+            parts.append(f"TSS {a['tss']}")
+        recent_lines.append(" · ".join(str(p) for p in parts if p))
+    recent_block = "\n".join(f"  - {l}" for l in recent_lines) or "  Nessuna attività recente"
+
+    # Garmin fields
+    g = garmin_data
+    data_block = "\n".join(filter(None, [
+        f"- Nome: {g.get('activity_name') or 'Attività'}" ,
+        f"- Durata: {g.get('duration_min')} min" if g.get("duration_min") else None,
+        f"- Distanza: {g.get('distance_km')} km" if g.get("distance_km") else None,
+        f"- Dislivello: {g.get('elevation_m')} m" if g.get("elevation_m") else None,
+        f"- Potenza media: {g.get('avg_power_w')}W" if g.get("avg_power_w") else None,
+        f"- NP: {g.get('normalized_power_w')}W" if g.get("normalized_power_w") else None,
+        f"- FC media: {g.get('avg_hr_bpm')} bpm" if g.get("avg_hr_bpm") else None,
+        f"- Cadenza: {g.get('avg_cadence_rpm')} rpm" if g.get("avg_cadence_rpm") else None,
+        f"- TSS: {g.get('tss')}" if g.get("tss") else None,
+        f"- Body Battery inizio: {g.get('body_battery_start')}" if g.get("body_battery_start") else None,
+        f"- Body Battery fine: {g.get('body_battery_end')}" if g.get("body_battery_end") else None,
+        f"- HRV: {g.get('hrv_ms')} ms" if g.get("hrv_ms") else None,
+        f"- Stress: {g.get('stress_score')}" if g.get("stress_score") else None,
+        f"- Sonno: {g.get('sleep_hours')}h (score {g.get('sleep_score')})" if g.get("sleep_hours") else None,
+    ]))
+
+    prompt = f"""Sei il coach di Marco, ciclista 53 anni.
+
+DATI ATTIVITÀ:
+{data_block}
+
+PROFILO:
+- FTP: {ftp}W
+- Zone potenza: Z1<{int(ftp*0.56)}W | Z2 {int(ftp*0.56)}-{int(ftp*0.75)}W | Z3 {int(ftp*0.75)}-{int(ftp*0.87)}W | Z4 {int(ftp*0.87)}-{int(ftp*1.05)}W | Z5>{int(ftp*1.05)}W
+- Obiettivo: Granfondo Novecolli 24 maggio 2026
+
+ATTIVITÀ RECENTI (14 giorni):
+{recent_block}
+
+Genera un report post-attività in Markdown, max 20 righe, con queste sezioni:
+1. **Riepilogo** — dati chiave in 2 righe
+2. **Performance** — analisi rispetto alle zone FTP, confronto con uscite simili
+3. **Recupero** — valutazione BB e HRV, stima ore necessarie
+4. **Prossima sessione** — tipo, intensità, durata consigliati
+5. **Nutrizione** — cosa mangiare nelle prossime 2-3 ore
+
+Sii diretto, usa i numeri reali, niente frasi generiche."""
+
+    resp = client.messages.create(
+        model="claude-opus-4-7",
+        max_tokens=800,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return resp.content[0].text.strip()
+
+
 def analyze_voice_transcript(transcript: str) -> dict:
     """Interpreta un messaggio (testo o voce) e determina il tipo di dato o correzione."""
     prompt = f"""Analizza questo messaggio di un atleta ciclista e determina cosa vuole fare.
