@@ -16,6 +16,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 _STATUS_HINTS = ('come sto', 'quanto posso', 'cosa posso mangiare', 'situazione oggi', 'riepilogo')
+_PLAN_PATTERNS = ('crea piano', 'pianifica', 'piano settimana', 'piano allenament', 'programma settimana', 'programma allenament')
 _STRONG_INTERROGATIVES = (
     'quale ', 'quali ', 'perché ', 'perche ', 'chi ', 'dove ',
     'spiegami ', 'parlami ', 'descrivimi ', 'che ftp', 'che potenza',
@@ -35,6 +36,9 @@ def _quick_classify(text: str) -> str | None:
 
     if any(t_lower.startswith(s) for s in _STRONG_INTERROGATIVES):
         return 'coach'
+
+    if any(p in t_lower for p in _PLAN_PATTERNS):
+        return 'plan_request'
 
     return None
 
@@ -134,6 +138,9 @@ async def dispatch_message(
 
         elif data_type == "zwo_request":
             await _handle_zwo_request(update, db, user_id, text)
+
+        elif data_type == "plan_request":
+            await _handle_plan_request(update, db, user_id, text)
 
         elif data_type == "weight":
             _upsert_health(db, user_id, {"weight_kg": data.get("weight_kg")})
@@ -343,6 +350,66 @@ async def _handle_zwo_request(update, db, user_id: str, text: str) -> None:
             pwr = round(float(seg.get("power", 0.70)) * ftp)
             reply += f"  • Steady state: {dur}min @ ~{pwr}W\n"
 
+    await update.message.reply_text(reply, parse_mode="Markdown")
+
+
+async def _handle_plan_request(update, db, user_id: str, text: str) -> None:
+    """Genera un piano settimanale e invia il riepilogo testuale via Telegram."""
+    import asyncio
+    from backend.services.plan_generator_service import generate_weekly_plan
+
+    t = text.lower()
+    if "recupero" in t:
+        objective = "recupero"
+    elif any(w in t for w in ("qualità", "qualita", "sweet spot", "intervalli", "soglia")):
+        objective = "qualità"
+    elif any(w in t for w in ("gara", "pre-gara", "evento")):
+        objective = "pre-gara"
+    else:
+        objective = "base aerobica"
+
+    period = "next_week" if any(w in t for w in ("prossim", "prossima")) else "current_week"
+
+    await update.message.reply_text("🗓️ Sto generando il piano settimanale con Claude AI...")
+
+    try:
+        plan = await asyncio.to_thread(generate_weekly_plan, user_id, period, objective)
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Errore nella generazione del piano: {e}")
+        return
+
+    sessions = plan.get("sessions", [])
+    summary = plan.get("summary", "")
+    metrics = plan.get("metrics", {})
+    period_info = plan.get("period", {})
+
+    _ICONS = {"recovery": "🟢", "base": "🔵", "long": "🔵", "sweetspot": "🟡",
+              "tempo": "🟠", "vo2max": "🔴", "rest": "⬜"}
+
+    lines = []
+    for s in sessions:
+        stype = s.get("type", "base")
+        if stype == "rest":
+            lines.append(f"⬜ *{s.get('day_name','').capitalize()}*: riposo")
+            continue
+        icon = _ICONS.get(stype, "🔵")
+        name = s.get("name") or stype
+        dur = s.get("duration_min") or 0
+        indoor = " 🏠" if s.get("indoor") else ""
+        short_desc = (s.get("description") or "")[:70]
+        lines.append(
+            f"{icon} *{s.get('day_name','').capitalize()}*{indoor}: {name} `{dur}'`\n"
+            f"  _{short_desc}_"
+        )
+
+    reply = (
+        f"🗓️ *Piano {objective}*\n"
+        f"_{period_info.get('start')} → {period_info.get('end')}_\n"
+        f"CTL `{metrics.get('ctl')}` | ATL `{metrics.get('atl')}` | TSB `{metrics.get('tsb')}`\n\n"
+        + "\n".join(lines)
+        + f"\n\n_{summary}_"
+        + "\n\n📥 Apri la dashboard → sezione *Piano* per scaricare il calendario ICS e i file .zwo"
+    )
     await update.message.reply_text(reply, parse_mode="Markdown")
 
 

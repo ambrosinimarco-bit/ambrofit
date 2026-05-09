@@ -1380,6 +1380,149 @@ function renderRpePowerChart(rides) {
   });
 }
 
+// ─── Weekly Plan Generator ────────────────────────────────────────
+let _generatedPlan = null;  // stores last generated plan data
+
+function openWeeklyPlanModal() {
+  document.getElementById('wpError').style.display = 'none';
+  document.getElementById('wpGenerateBtn').disabled = false;
+  document.getElementById('wpGenerateBtn').textContent = '🧠 Genera piano';
+  openModal('modalWeeklyPlan');
+}
+
+async function generateWeeklyPlan() {
+  const btn = document.getElementById('wpGenerateBtn');
+  const errEl = document.getElementById('wpError');
+  errEl.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = '⏳ Claude sta pianificando...';
+
+  const period = document.getElementById('wpPeriod').value;
+  const objective = document.getElementById('wpObjective').value;
+  const availableDays = [...document.querySelectorAll('input[name="wpDay"]:checked')].map(el => el.value);
+  const eventName = document.getElementById('wpEventName').value.trim() || null;
+  const eventDate = document.getElementById('wpEventDate').value || null;
+
+  try {
+    const data = await api.generateWeeklyPlan(USER_ID, {
+      period,
+      objective,
+      available_days: availableDays,
+      target_event_name: eventName,
+      target_event_date: eventDate,
+    });
+    _generatedPlan = data;
+    closeModal();
+    renderWeeklyPlanPreview(data);
+  } catch (err) {
+    errEl.textContent = 'Errore: ' + err.message;
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = '🧠 Genera piano';
+  }
+}
+
+function renderWeeklyPlanPreview(data) {
+  const preview = document.getElementById('weeklyPlanPreview');
+  const summaryEl = document.getElementById('weeklyPlanSummary');
+  const sessionsEl = document.getElementById('weeklyPlanSessions');
+  const btnZwos = document.getElementById('btnDownloadZwos');
+
+  const { sessions = [], summary = '', metrics = {}, zwo_count = 0 } = data;
+
+  summaryEl.textContent = summary;
+  if (metrics.tsb !== undefined) {
+    summaryEl.textContent += ` | TSB ${metrics.tsb} | CTL ${metrics.ctl} | ATL ${metrics.atl}`;
+  }
+
+  btnZwos.style.display = zwo_count > 0 ? '' : 'none';
+
+  const _ICONS = { recovery: '🟢', base: '🔵', long: '🔵', sweetspot: '🟡', tempo: '🟠', vo2max: '🔴', rest: '⬜' };
+  const _LABEL = { recovery: 'Recupero', base: 'Base Z2', long: 'Lungo Z2', sweetspot: 'Sweet Spot', tempo: 'Tempo', vo2max: 'VO2max', rest: 'Riposo' };
+  const ftp = 202;
+
+  sessionsEl.innerHTML = sessions.map(s => {
+    const type = s.type || 'base';
+    const icon = _ICONS[type] || '🔵';
+    const label = _LABEL[type] || type;
+    if (type === 'rest') {
+      return `<div class="wp-session wp-rest">
+        <div class="wp-day">${s.day_name || ''}</div>
+        <div class="wp-type">${icon} Riposo</div>
+      </div>`;
+    }
+    const indoorBadge = s.indoor ? '<span class="wp-badge">🏠 indoor</span>' : '<span class="wp-badge wp-outdoor">🌿 outdoor</span>';
+    const pwrLine = s.power_targets?.main ? `<span class="wp-power">~${s.power_targets.main}W</span>` : '';
+    // Build segment summary
+    let segSummary = '';
+    if (s.segments) {
+      const segs = s.segments.map(seg => {
+        if (seg.type === 'Warmup') return `Risc. ${seg.duration_min}'`;
+        if (seg.type === 'Cooldown') return `Def. ${seg.duration_min}'`;
+        if (seg.type === 'SteadyState') return `Steady ${seg.duration_min}'@${Math.round(seg.power * ftp)}W`;
+        if (seg.type === 'IntervalsT') return `${seg.repeat}×${seg.on_duration_min}'@${Math.round(seg.on_power * ftp)}W`;
+        return '';
+      }).filter(Boolean).join(' · ');
+      segSummary = `<div class="wp-segments">${segs}</div>`;
+    }
+    return `<div class="wp-session">
+      <div class="wp-day">${s.day_name || ''} <span class="wp-date">${s.date || ''}</span></div>
+      <div class="wp-type">${icon} ${label} ${indoorBadge} ${pwrLine}</div>
+      <div class="wp-name">${esc(s.name || '')}</div>
+      <div class="wp-desc">${esc(s.description || '')}</div>
+      ${segSummary}
+    </div>`;
+  }).join('');
+
+  preview.style.display = 'block';
+  preview.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function downloadPlanICS() {
+  if (!_generatedPlan?.ics_content) return;
+  const blob = new Blob([_generatedPlan.ics_content], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'piano_allenamento.ics';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function downloadPlanZwos() {
+  if (!_generatedPlan?.zwo_zip_b64) return;
+  const b64 = _generatedPlan.zwo_zip_b64;
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const blob = new Blob([bytes], { type: 'application/zip' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'piano_allenamento_zwo.zip';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function savePlanToDB() {
+  if (!_generatedPlan?.sessions?.length) return;
+  const btn = event.currentTarget;
+  btn.disabled = true;
+  btn.textContent = '⏳ Salvataggio...';
+  try {
+    const p = _generatedPlan.period || {};
+    const planName = `Piano ${_generatedPlan.sessions[0]?.type || 'allenamento'} ${p.start || ''} → ${p.end || ''}`;
+    await api.saveWeeklyPlan(USER_ID, planName, _generatedPlan.sessions);
+    btn.textContent = '✅ Piano salvato!';
+    loadTraining();
+  } catch (err) {
+    btn.textContent = '⚠️ Errore salvataggio';
+    btn.disabled = false;
+  }
+}
+
 // ─── ZWO Generator ────────────────────────────────────────────────
 function openZwoModal() {
   document.getElementById('zwoPreview').style.display = 'none';

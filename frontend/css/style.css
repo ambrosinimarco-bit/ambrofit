@@ -351,6 +351,25 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .btn-coach { display: inline-block; background: rgba(108,99,255,.12); color: var(--accent); border: 1px solid rgba(108,99,255,.28); font-size: .8rem; padding: .35rem .85rem; border-radius: 20px; cursor: pointer; margin-top: .75rem; transition: background .15s; }
 .btn-coach:hover { background: rgba(108,99,255,.24); }
 
+/* ─── Weekly Plan ───────────────────────────────────────────────── */
+.days-checkbox-row { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .35rem; }
+.day-check { display: flex; align-items: center; gap: .3rem; background: var(--bg3); border: 1px solid rgba(255,255,255,.08); border-radius: 6px; padding: .35rem .6rem; cursor: pointer; font-size: .85rem; transition: border-color .12s; }
+.day-check:has(input:checked) { border-color: var(--accent); color: var(--accent); }
+.day-check input { display: none; }
+
+.weekly-plan-sessions { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: .75rem; margin-top: .5rem; }
+.wp-session { background: var(--bg3); border-radius: 8px; padding: .85rem 1rem; border-left: 3px solid var(--accent); }
+.wp-rest { border-left-color: rgba(255,255,255,.12); opacity: .6; }
+.wp-day { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text2); }
+.wp-date { font-weight: 400; opacity: .7; margin-left: .3rem; }
+.wp-type { font-size: .9rem; font-weight: 600; margin: .3rem 0 .15rem; display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.wp-name { font-size: .82rem; font-weight: 600; color: var(--text1); }
+.wp-desc { font-size: .78rem; color: var(--text2); margin-top: .25rem; line-height: 1.45; }
+.wp-segments { font-size: .72rem; color: var(--text2); margin-top: .4rem; background: rgba(0,0,0,.2); border-radius: 4px; padding: .3rem .5rem; font-family: monospace; }
+.wp-badge { font-size: .68rem; background: rgba(108,99,255,.15); color: var(--accent); border-radius: 4px; padding: .1rem .35rem; }
+.wp-outdoor { background: rgba(0,212,170,.1); color: #00d4aa; }
+.wp-power { font-size: .78rem; color: var(--accent); font-weight: 700; margin-left: auto; }
+
 /* ─── Responsive ────────────────────────────────────────────────── */
 @media (max-width: 900px) {
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }

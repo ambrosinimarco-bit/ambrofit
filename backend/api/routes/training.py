@@ -50,6 +50,83 @@ def update_session(session_id: str, data: dict):
     return result.data[0]
 
 
+class WeeklyPlanRequest(BaseModel):
+    user_id: str
+    period: str = "current_week"          # current_week | next_week | two_weeks
+    objective: str = "base aerobica"
+    available_days: list[str] = []        # ["monday","tuesday",...]
+    target_event_name: str | None = None
+    target_event_date: str | None = None
+
+
+class SaveWeeklyPlanRequest(BaseModel):
+    user_id: str
+    plan_name: str
+    sessions: list[dict]
+
+
+@router.post("/generate-weekly-plan")
+async def generate_weekly_plan_endpoint(body: WeeklyPlanRequest):
+    from backend.services.plan_generator_service import generate_weekly_plan
+    try:
+        result = await asyncio.to_thread(
+            generate_weekly_plan,
+            body.user_id,
+            body.period,
+            body.objective,
+            body.available_days or None,
+            body.target_event_name,
+            body.target_event_date,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/save-weekly-plan")
+def save_weekly_plan_endpoint(body: SaveWeeklyPlanRequest):
+    db = get_supabase()
+    sessions = [s for s in body.sessions if s.get("type") != "rest" and s.get("date")]
+    if not sessions:
+        raise HTTPException(status_code=400, detail="Nessuna sessione da salvare")
+
+    dates = [s["date"] for s in sessions]
+    start_date = min(dates)
+    end_date = max(dates)
+
+    # Deactivate existing plans
+    db.table("training_plans").update({"is_active": False}).eq("user_id", body.user_id).execute()
+
+    plan_res = db.table("training_plans").insert({
+        "user_id": body.user_id,
+        "name": body.plan_name,
+        "goal": body.sessions[0].get("type", "base") if body.sessions else "base",
+        "description": "",
+        "start_date": start_date,
+        "end_date": end_date,
+        "weekly_sessions": len(sessions),
+        "is_active": True,
+    }).execute()
+    plan_id = plan_res.data[0]["id"]
+
+    rows = []
+    for s in sessions:
+        rows.append({
+            "plan_id": plan_id,
+            "user_id": body.user_id,
+            "scheduled_date": s["date"],
+            "activity_type": "ride",
+            "title": s.get("name") or s.get("type") or "Sessione",
+            "description": s.get("description") or "",
+            "duration_target_min": s.get("duration_min") or 45,
+            "intensity": s.get("type") or "moderate",
+            "status": "planned",
+        })
+    db.table("training_sessions").insert(rows).execute()
+
+    return {"plan_id": plan_id, "sessions_saved": len(rows)}
+
+
 class ZwoGenerateRequest(BaseModel):
     user_id: str
     session_type: str   # recovery | base | sweetspot | tempo | vo2max

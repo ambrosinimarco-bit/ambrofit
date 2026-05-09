@@ -49,6 +49,14 @@ const api = {
   adjustPlan:     (uid, data) => apiFetch(`/api/training/plan/${uid}/adjust`, { method: 'POST', body: data }),
   updateSession:  (sid, data) => apiFetch(`/api/training/session/${sid}`, { method: 'PATCH', body: data }),
   getSessions:    (uid, days=14) => apiFetch(`/api/training/sessions/${uid}?days=${days}`),
+  generateWeeklyPlan: (uid, params) => apiFetch('/api/training/generate-weekly-plan', {
+    method: 'POST',
+    body: { user_id: uid, ...params },
+  }),
+  saveWeeklyPlan: (uid, planName, sessions) => apiFetch('/api/training/save-weekly-plan', {
+    method: 'POST',
+    body: { user_id: uid, plan_name: planName, sessions },
+  }),
   generateZwo:    (uid, sessionType, durationMin) => apiFetch('/api/training/generate-zwo', {
     method: 'POST',
     body: { user_id: uid, session_type: sessionType, duration_min: durationMin },
