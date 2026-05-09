@@ -123,27 +123,7 @@ Rispondi con JSON esatto:
     return json.loads(response.content[0].text)
 
 
-def analyze_garmin_screenshot(image_bytes: bytes) -> dict:
-    """Estrae dati fitness da uno screenshot di Garmin Connect (salute o attività ciclistica)."""
-    b64 = _image_to_base64(image_bytes)
-
-    response = client.messages.create(
-        model="claude-opus-4-7",
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=[{
-            "role": "user",
-            "content": [
-                {
-                    "type": "image",
-                    "source": {"type": "base64", "media_type": "image/jpeg", "data": b64},
-                },
-                {
-                    "type": "text",
-                    "text": """Questo è uno screenshot di Garmin Connect. Determina se mostra dati di salute giornaliera o un'attività ciclistica, poi estrai tutti i dati visibili.
-
-Rispondi con JSON esatto (usa null per i valori non visibili):
-{
+_GARMIN_JSON_SCHEMA = """{
   "screen_type": "health|activity|mixed",
   "date": "YYYY-MM-DD o null",
   "body_battery_start": null,
@@ -170,13 +150,48 @@ Rispondi con JSON esatto (usa null per i valori non visibili):
   "distance_km": null,
   "elevation_m": null,
   "tss": null,
-  "raw_text": "testo grezzo rilevante dallo screenshot"
-}""",
-                },
-            ],
-        }],
-    )
+  "raw_text": "testo grezzo rilevante dagli screenshot"
+}"""
+
+
+def analyze_garmin_screenshots_batch(images: list[bytes]) -> dict:
+    """Analyze one or more Garmin screenshots in a single API call, merging all data."""
     import json
+
+    content: list[dict] = []
+    for img_bytes in images:
+        content.append({
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/jpeg", "data": _image_to_base64(img_bytes)},
+        })
+
+    n = len(images)
+    if n == 1:
+        intro = "Questo è uno screenshot di Garmin Connect. Estrai tutti i dati visibili."
+    else:
+        intro = (
+            f"Questi sono {n} screenshot di Garmin Connect dello stesso utente/sessione. "
+            "Ogni immagine può mostrare una schermata diversa (velocità, potenza, cadenza, "
+            "salute, ecc.). Analizzali tutti e unisci i dati in un unico JSON consolidato: "
+            "se un valore appare in più screenshot usa quello più preciso/dettagliato. "
+            "Determina il screen_type complessivo ('mixed' se ci sono sia salute che attività)."
+        )
+
+    content.append({
+        "type": "text",
+        "text": (
+            f"{intro}\n\n"
+            f"Rispondi con JSON esatto (null per valori non visibili in nessuno screenshot):\n"
+            f"{_GARMIN_JSON_SCHEMA}"
+        ),
+    })
+
+    response = client.messages.create(
+        model="claude-opus-4-7",
+        max_tokens=1024,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": content}],
+    )
     return json.loads(response.content[0].text)
 
 

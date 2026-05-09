@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 from backend.services.claude_service import (
     analyze_food_photo,
     analyze_nutrition_label,
-    analyze_garmin_screenshot,
+    analyze_garmin_screenshots_batch,
     classify_photo_type,
     generate_activity_report,
 )
@@ -19,6 +19,10 @@ _GARMIN_KEYWORDS = {
 }
 _LABEL_KEYWORDS = {"etichetta", "label", "ingredienti", "valori nutrizionali"}
 
+# Buffer: user_id -> {images: [bytes], update: Update, context: ctx, task: Task}
+_pending_garmin: dict[str, dict] = {}
+_BUFFER_SECONDS = 10
+
 
 def _detect_photo_type_from_caption(caption: str) -> str | None:
     """Returns 'garmin'/'label'/'food' if caption has clear signal, else None."""
@@ -29,11 +33,10 @@ def _detect_photo_type_from_caption(caption: str) -> str | None:
         return "label"
     if any(k in c for k in _GARMIN_KEYWORDS):
         return "garmin"
-    return None  # ambiguous — needs visual check
+    return None
 
 
 def _extract_quantity(caption: str) -> float:
-    """Estrae la quantità in grammi dal caption."""
     if not caption:
         return 100.0
     match = re.search(r"(\d+(?:[.,]\d+)?)\s*g", caption, re.IGNORECASE)
@@ -46,44 +49,86 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     user_id = await get_or_create_user(update)
     caption = update.message.caption or ""
 
-    await update.message.reply_text("📸 Sto analizzando la foto...")
-
     photo = update.message.photo[-1]
     photo_file = await photo.get_file()
-    image_bytes = await photo_file.download_as_bytearray()
-    image_bytes = bytes(image_bytes)
+    image_bytes = bytes(await photo_file.download_as_bytearray())
 
-    # Step 1: classify from caption; fall back to visual Claude classification
+    # Two-stage classification: keyword → Claude Haiku visual fallback
     photo_type = _detect_photo_type_from_caption(caption)
     if photo_type is None:
+        await update.message.reply_text("📸 Sto analizzando la foto...")
         photo_type = await asyncio.to_thread(classify_photo_type, image_bytes)
 
+    if photo_type == "garmin":
+        await _buffer_garmin_photo(update, user_id, image_bytes)
+        return
+
+    # Food / label: process immediately
+    await update.message.reply_text("📸 Sto analizzando la foto...")
     db = get_supabase()
-
     try:
-        if photo_type == "garmin":
-            result = await asyncio.to_thread(analyze_garmin_screenshot, image_bytes)
-            activity_id = _save_garmin_data(db, user_id, result)
-            reply_text = _format_garmin_reply(result, db, user_id)
-            await update.message.reply_text(reply_text, parse_mode="Markdown")
-
-            # Post-activity report for sessions with power/duration data
-            if result.get("avg_power_w") or result.get("duration_min"):
-                await _send_activity_report(update, db, user_id, result, activity_id)
-
-        elif photo_type == "label":
+        if photo_type == "label":
             quantity = _extract_quantity(caption)
             result = await asyncio.to_thread(analyze_nutrition_label, image_bytes, quantity)
             _save_label_meal(db, user_id, result, quantity)
             await update.message.reply_text(_format_label_reply(result, quantity), parse_mode="Markdown")
-
         else:
             result = await asyncio.to_thread(analyze_food_photo, image_bytes, caption)
             _save_food_meal(db, user_id, result)
             await update.message.reply_text(_format_food_reply(result), parse_mode="Markdown")
-
     except Exception as e:
         await update.message.reply_text(f"Errore nell'analisi della foto: {e}")
+
+
+async def _buffer_garmin_photo(update: Update, user_id: str, image_bytes: bytes) -> None:
+    """Add image to user's pending batch, reset the 10-second flush timer."""
+    if user_id in _pending_garmin:
+        existing_task = _pending_garmin[user_id].get("task")
+        if existing_task and not existing_task.done():
+            existing_task.cancel()
+        _pending_garmin[user_id]["images"].append(image_bytes)
+        _pending_garmin[user_id]["update"] = update
+        n = len(_pending_garmin[user_id]["images"])
+        await update.message.reply_text(
+            f"📸 Screenshot {n} aggiunto al batch. Aspetto altri 10s..."
+        )
+    else:
+        _pending_garmin[user_id] = {"images": [image_bytes], "update": update}
+        await update.message.reply_text(
+            "📸 Screenshot Garmin ricevuto. Aspetto altri screenshot per 10s prima di elaborare..."
+        )
+
+    task = asyncio.create_task(_flush_garmin_batch(user_id))
+    _pending_garmin[user_id]["task"] = task
+
+
+async def _flush_garmin_batch(user_id: str) -> None:
+    """After buffer window expires, analyze all buffered images in one Claude call."""
+    await asyncio.sleep(_BUFFER_SECONDS)
+
+    batch = _pending_garmin.pop(user_id, None)
+    if not batch:
+        return
+
+    update: Update = batch["update"]
+    images: list[bytes] = batch["images"]
+    n = len(images)
+
+    await update.message.reply_text(
+        f"🔄 Elaboro {n} screenshot Garmin {'insieme' if n > 1 else ''}..."
+    )
+
+    db = get_supabase()
+    try:
+        result = await asyncio.to_thread(analyze_garmin_screenshots_batch, images)
+        activity_id = _save_garmin_data(db, user_id, result)
+        await update.message.reply_text(_format_garmin_reply(result, db, user_id), parse_mode="Markdown")
+
+        if result.get("avg_power_w") or result.get("duration_min"):
+            await _send_activity_report(update, db, user_id, result, activity_id)
+
+    except Exception as e:
+        await update.message.reply_text(f"Errore nell'analisi degli screenshot: {e}")
 
 
 def _save_food_meal(db, user_id: str, result: dict):
@@ -124,7 +169,6 @@ def _save_garmin_data(db, user_id: str, result: dict) -> str | None:
     target_date = result.get("date") or date.today().isoformat()
     screen_type = result.get("screen_type", "health")
 
-    # Salva dati salute se presenti
     has_health_data = any(result.get(k) for k in [
         "body_battery_end", "body_battery_start", "stress_score",
         "hrv_ms", "resting_hr", "sleep_hours", "steps",
@@ -149,7 +193,6 @@ def _save_garmin_data(db, user_id: str, result: dict) -> str | None:
         else:
             db.table("daily_health").insert(health_data).execute()
 
-    # Salva come attività se ci sono dati di potenza/attività ciclistica
     has_activity_data = any(result.get(k) for k in [
         "avg_power_w", "normalized_power_w", "avg_hr_bpm", "duration_min",
     ])
@@ -188,14 +231,12 @@ async def _send_activity_report(
 ) -> None:
     """Generate coaching report, send via Telegram, save to activity notes."""
     try:
-        # Fetch profile for FTP
         profile_res = db.table("user_profiles").select(
             "ftp_watts,weight_kg,coaching_notes"
         ).eq("id", user_id).limit(1).execute()
         profile = (profile_res.data or [{}])[0]
         ftp = int(profile.get("ftp_watts") or 202)
 
-        # Recent activities for context (last 14 days)
         since = (date.today() - timedelta(days=14)).isoformat()
         recent_res = db.table("activities").select(
             "activity_date,name,duration_min,avg_power_w,normalized_power_w,tss"
@@ -211,7 +252,6 @@ async def _send_activity_report(
 
         await update.message.reply_text(report, parse_mode="Markdown")
 
-        # Save report to activity notes
         if activity_id:
             db.table("activities").update({"notes": report})\
                 .eq("id", activity_id).execute()
@@ -221,7 +261,6 @@ async def _send_activity_report(
 
 
 def _get_coaching_comment(result: dict, profile: dict) -> str:
-    """Genera un commento coaching basato sui dati Garmin e il profilo utente."""
     avg_power = result.get("avg_power_w")
     if not avg_power:
         return ""
@@ -286,7 +325,6 @@ def _format_garmin_reply(result: dict, db=None, user_id: str = "") -> str:
     screen_type = result.get("screen_type", "health")
     lines = ["📱 *Dati Garmin rilevati:*\n"]
 
-    # Dati salute
     if result.get("body_battery_end"):
         lines.append(f"🔋 Body Battery: `{result['body_battery_end']}`")
     if result.get("stress_score"):
@@ -300,7 +338,6 @@ def _format_garmin_reply(result: dict, db=None, user_id: str = "") -> str:
     if result.get("steps"):
         lines.append(f"👟 Passi: `{result['steps']:,}`")
 
-    # Dati attività ciclistica
     if screen_type in ("activity", "mixed") or result.get("avg_power_w"):
         if result.get("activity_name"):
             lines.append(f"\n🚴 *Attività:* {result['activity_name']}")
@@ -323,7 +360,6 @@ def _format_garmin_reply(result: dict, db=None, user_id: str = "") -> str:
 
     lines.append("\n✅ Dati salvati!")
 
-    # Commento coaching se ci sono dati di potenza e db/user_id disponibili
     if db and user_id and result.get("avg_power_w"):
         try:
             profile_res = db.table("user_profiles").select(
