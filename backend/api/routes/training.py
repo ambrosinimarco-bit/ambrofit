@@ -3,43 +3,23 @@ import json
 import logging
 import traceback
 import uuid
-from datetime import datetime
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from datetime import date, datetime, timedelta, timezone
+from fastapi import APIRouter, HTTPException
 
 logger = logging.getLogger(__name__)
 from pydantic import BaseModel
-from datetime import date
 from backend.database.client import get_supabase
-from backend.database.models import TrainingPlanCreate, TrainingSessionCreate, PlanAdjustmentRequest
+from backend.database.models import PlanAdjustmentRequest
 from backend.services.training_plan_service import (
     get_active_plan,
     get_plan_sessions,
-    create_plan_from_claude,
     adjust_plan,
 )
 
 router = APIRouter(prefix="/api/training", tags=["training"])
 
-# Ephemeral in-memory job store (per-process, fine for single-instance Railway deploy)
-_jobs: dict[str, dict] = {}
 
-
-async def _run_plan_job(job_id: str, body: "WeeklyPlanRequest") -> None:
-    from backend.services.plan_generator_service import generate_weekly_plan
-    try:
-        result = await asyncio.to_thread(
-            generate_weekly_plan,
-            body.user_id, body.period, body.objective,
-            body.available_days or None,
-            body.target_event_name, body.target_event_date, body.user_notes,
-        )
-        _jobs[job_id]["status"] = "ready"
-        _jobs[job_id]["result"] = result
-    except Exception:
-        logger.error("plan job %s ERROR:\n%s", job_id, traceback.format_exc())
-        _jobs[job_id]["status"] = "error"
-        _jobs[job_id]["error"] = traceback.format_exc().splitlines()[-1]
-
+# ── Existing plan CRUD ────────────────────────────────────────────────────────
 
 @router.get("/plan/{user_id}")
 def get_plan(user_id: str):
@@ -48,11 +28,6 @@ def get_plan(user_id: str):
         return {"plan": None, "sessions": []}
     sessions = get_plan_sessions(plan["id"])
     return {"plan": plan, "sessions": sessions}
-
-
-@router.post("/plan/{user_id}/generate")
-def generate_plan(user_id: str, request: str):
-    return create_plan_from_claude(user_id, request)
 
 
 @router.post("/plan/{user_id}/adjust")
@@ -77,113 +52,121 @@ def update_session(session_id: str, data: dict):
     return result.data[0]
 
 
-class WeeklyPlanRequest(BaseModel):
-    user_id: str
-    period: str = "current_week"          # current_week | next_week | two_weeks
-    objective: str = "base aerobica"
-    available_days: list[str] = []        # ["monday","tuesday",...]
-    target_event_name: str | None = None
-    target_event_date: str | None = None
-    user_notes: str | None = None         # testo libero dell'utente
-
-
-class SaveWeeklyPlanRequest(BaseModel):
-    user_id: str
-    plan_name: str
-    sessions: list[dict]
-
-
-@router.post("/generate-weekly-plan")
-async def generate_weekly_plan_endpoint(body: WeeklyPlanRequest, background_tasks: BackgroundTasks):
-    """Returns a job_id immediately; poll /plan-status/{job_id} for the result."""
-    # Clean up jobs older than 1 hour to avoid unbounded memory growth
-    now = datetime.utcnow().timestamp()
-    stale = [k for k, v in list(_jobs.items()) if now - v.get("ts", now) > 3600]
-    for k in stale:
-        _jobs.pop(k, None)
-
-    job_id = str(uuid.uuid4())
-    _jobs[job_id] = {"status": "pending", "ts": now}
-    background_tasks.add_task(_run_plan_job, job_id, body)
-    logger.info("plan job %s queued: user=%s period=%s", job_id, body.user_id, body.period)
-    return {"job_id": job_id}
-
-
-@router.get("/plan-status/{job_id}")
-def get_plan_status(job_id: str):
-    job = _jobs.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job non trovato o scaduto")
-    if job["status"] == "ready":
-        return {"status": "ready", **job["result"]}
-    if job["status"] == "error":
-        return {"status": "error", "error": job["error"]}
-    return {"status": "pending"}
-
-
-@router.post("/save-weekly-plan")
-def save_weekly_plan_endpoint(body: SaveWeeklyPlanRequest):
+@router.get("/sessions/{user_id}")
+def get_sessions(user_id: str, from_date: date | None = None, days: int = 14):
     db = get_supabase()
-    sessions = [s for s in body.sessions if s.get("type") != "rest" and s.get("date")]
-    if not sessions:
-        raise HTTPException(status_code=400, detail="Nessuna sessione da salvare")
+    start = (from_date or date.today()).isoformat()
+    end = ((from_date or date.today()) + timedelta(days=days)).isoformat()
+    result = db.table("training_sessions")\
+        .select("*")\
+        .eq("user_id", user_id)\
+        .gte("scheduled_date", start)\
+        .lte("scheduled_date", end)\
+        .order("scheduled_date")\
+        .execute()
+    return result.data or []
 
-    dates = [s["date"] for s in sessions]
-    start_date = min(dates)
-    end_date = max(dates)
 
-    # Deactivate existing plans
-    db.table("training_plans").update({"is_active": False}).eq("user_id", body.user_id).execute()
+# ── ICS generation from plain-text plan ──────────────────────────────────────
 
-    plan_res = db.table("training_plans").insert({
-        "user_id": body.user_id,
-        "name": body.plan_name,
-        "goal": body.sessions[0].get("type", "base") if body.sessions else "base",
-        "description": "",
-        "start_date": start_date,
-        "end_date": end_date,
-        "weekly_sessions": len(sessions),
-        "is_active": True,
-    }).execute()
-    plan_id = plan_res.data[0]["id"]
+class ICSRequest(BaseModel):
+    user_id: str
+    plan_text: str
+    week_start: str  # YYYY-MM-DD
 
-    rows = []
+
+def _ics_esc(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("\n", "\\n").replace(",", "\\,").replace(";", "\\;")
+
+
+def _build_ics(sessions: list[dict]) -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Ambrofit//Training Plan//IT",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        "X-WR-CALNAME:Ambrofit Allenamenti",
+        "X-WR-TIMEZONE:Europe/Rome",
+    ]
     for s in sessions:
-        row = {
-            "plan_id": plan_id,
-            "user_id": body.user_id,
-            "scheduled_date": s["date"],
-            "activity_type": "ride" if s.get("type") not in ("strength", "mobility") else s["type"],
-            "title": s.get("name") or s.get("type") or "Sessione",
-            "description": s.get("description") or "",
-            "duration_target_min": s.get("duration_min") or 45,
-            "intensity": s.get("type") or "moderate",
-            "status": "planned",
-        }
-        if s.get("exercises"):
-            row["exercises_json"] = json.dumps(s["exercises"], ensure_ascii=False)
-        rows.append(row)
-    db.table("training_sessions").insert(rows).execute()
+        try:
+            d = date.fromisoformat(s["date"])
+        except (ValueError, KeyError):
+            continue
+        start_h = int(s.get("start_hour") or 7)
+        dur = int(s.get("duration_min") or 90)
+        dt_start = datetime(d.year, d.month, d.day, start_h, 0)
+        dt_end = dt_start + timedelta(minutes=dur)
+        title = _ics_esc("🚴 " + (s.get("title") or "Allenamento"))
+        desc = _ics_esc(s.get("description") or "")
+        lines += [
+            "BEGIN:VEVENT",
+            f"UID:{uuid.uuid4()}@ambrofit",
+            f"DTSTAMP:{stamp}",
+            f"DTSTART;TZID=Europe/Rome:{dt_start.strftime('%Y%m%dT%H%M%S')}",
+            f"DTEND;TZID=Europe/Rome:{dt_end.strftime('%Y%m%dT%H%M%S')}",
+            f"SUMMARY:{title}",
+            f"DESCRIPTION:{desc}",
+            "BEGIN:VALARM",
+            "ACTION:DISPLAY",
+            "DESCRIPTION:Allenamento tra 30 minuti",
+            "TRIGGER:-PT30M",
+            "END:VALARM",
+            "END:VEVENT",
+        ]
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(lines) + "\r\n"
 
-    return {"plan_id": plan_id, "sessions_saved": len(rows)}
+
+@router.post("/generate-ics")
+async def generate_ics_endpoint(body: ICSRequest):
+    """Claude reads the plain-text plan and extracts sessions; returns .ics content."""
+    import anthropic
+    from backend.config import get_settings
+    settings = get_settings()
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+
+    prompt = f"""Leggi questo piano di allenamento e restituisci un JSON array con le sessioni.
+Settimana che inizia il: {body.week_start}
+
+PIANO:
+{body.plan_text}
+
+Per ogni giorno con una sessione di allenamento (NON i giorni di riposo) restituisci:
+- "date": data ISO YYYY-MM-DD (calcola le date reali a partire dal {body.week_start})
+- "title": titolo breve (es. "Uscita base Z2", "Sweet Spot 60min", "Forza")
+- "description": testo descrittivo completo copiato dal piano
+- "duration_min": durata in minuti ("1h30" → 90, "2 ore" → 120, default 90)
+- "start_hour": ora di inizio (7 se non specificata)
+
+Rispondi SOLO con il JSON array, nessun altro testo."""
+
+    try:
+        resp = await asyncio.to_thread(
+            client.messages.create,
+            model="claude-opus-4-7",
+            max_tokens=2000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = resp.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```", 2)[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.rstrip("`").strip()
+        sessions = json.loads(raw)
+    except Exception as e:
+        logger.error("generate-ics ERROR:\n%s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+    ics = _build_ics(sessions)
+    logger.info("generate-ics: %d sessioni per settimana %s", len(sessions), body.week_start)
+    return {"ics_content": ics, "session_count": len(sessions)}
 
 
-class SessionZwoRequest(BaseModel):
-    name: str
-    description: str = ""
-    segments: list[dict]
-    ftp: int = 202
-    weight_kg: float = 75.0
-
-
-@router.post("/generate-session-zwo")
-def generate_session_zwo(body: SessionZwoRequest):
-    """Genera .zwo da segmenti già pianificati (senza chiamata Claude)."""
-    from backend.services.zwo_service import generate_zwo_xml, safe_filename
-    workout = {"name": body.name, "description": body.description, "segments": body.segments}
-    xml = generate_zwo_xml(workout, body.ftp, body.weight_kg)
-    return {"xml": xml, "filename": safe_filename(body.name) + ".zwo"}
-
+# ── ZWO generation ────────────────────────────────────────────────────────────
 
 class ZwoGenerateRequest(BaseModel):
     user_id: str
@@ -202,7 +185,7 @@ _SESSION_LABELS = {
 
 @router.post("/generate-zwo")
 async def generate_zwo_endpoint(body: ZwoGenerateRequest):
-    """Genera un file .zwo per MyWhoosh e lo restituisce come contenuto XML."""
+    """Genera un file .zwo per MyWhoosh."""
     db = get_supabase()
     profile_res = db.table("user_profiles").select("ftp_watts,weight_kg")\
         .eq("id", body.user_id).limit(1).execute()
@@ -224,20 +207,3 @@ async def generate_zwo_endpoint(body: ZwoGenerateRequest):
 
     filename = safe_filename(workout.get("name", "Workout")) + ".zwo"
     return {"xml": xml_content, "filename": filename, "workout": workout}
-
-
-@router.get("/sessions/{user_id}")
-def get_sessions(user_id: str, from_date: date | None = None, days: int = 14):
-    db = get_supabase()
-    from datetime import timedelta
-    start = (from_date or date.today()).isoformat()
-    end = ((from_date or date.today()) + timedelta(days=days)).isoformat()
-
-    result = db.table("training_sessions")\
-        .select("*")\
-        .eq("user_id", user_id)\
-        .gte("scheduled_date", start)\
-        .lte("scheduled_date", end)\
-        .order("scheduled_date")\
-        .execute()
-    return result.data or []

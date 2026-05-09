@@ -314,25 +314,29 @@
         <div id="trainingPlanHeader" class="plan-header"></div>
 
         <div class="plan-actions">
-          <button class="btn btn-outline btn-sm" onclick="openNewPlanModal()">🧠 Crea piano con AI</button>
           <button class="btn btn-outline btn-sm" onclick="openAdjustPlanModal()">✏️ Segnala pausa/modifica</button>
           <button class="btn btn-outline btn-sm" onclick="openZwoModal()">🚴 Genera sessione .zwo</button>
-          <button class="btn btn-primary btn-sm" onclick="openWeeklyPlanModal()">🗓️ Genera piano</button>
         </div>
 
-        <!-- Piano generato (preview) -->
-        <div id="weeklyPlanPreview" style="display:none;margin-top:1.5rem">
-          <div class="card">
-            <div class="card-header-row">
-              <h3>📅 Piano generato</h3>
-              <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-                <button class="btn btn-outline btn-sm" id="btnDownloadICS" onclick="downloadPlanICS()">📥 Scarica ICS</button>
-                <button class="btn btn-outline btn-sm" id="btnDownloadZwos" onclick="downloadPlanZwos()">📥 Scarica .zwo ZIP</button>
-                <button class="btn btn-primary btn-sm" id="btnSavePlan" onclick="savePlanToDB()">💾 Salva piano</button>
-              </div>
-            </div>
-            <p id="weeklyPlanSummary" style="font-size:.85rem;color:var(--text2);margin-bottom:1rem"></p>
-            <div id="weeklyPlanSessions" class="weekly-plan-sessions"></div>
+        <!-- ICS Generator -->
+        <div class="card" style="margin-top:1rem">
+          <div class="card-header-row">
+            <h3>📅 Genera calendario ICS</h3>
+          </div>
+          <p style="color:var(--text2);font-size:.85rem;margin-bottom:.75rem">
+            Incolla il piano settimanale generato dal <strong>Coach</strong>, poi scarica il file <code>.ics</code> per Outlook o Google Calendar.
+          </p>
+          <div class="form-group" style="max-width:200px">
+            <label>Inizio settimana</label>
+            <input type="date" id="icsWeekStart" />
+          </div>
+          <div class="form-group">
+            <label>Piano dal Coach</label>
+            <textarea id="icsPlanText" rows="9" placeholder="Incolla qui il piano settimanale dal Coach...&#10;&#10;Es.&#10;Lunedì – Recupero attivo 45min Z1&#10;Martedì – Sweet Spot 60min indoor&#10;Mercoledì – Riposo&#10;Giovedì – Forza 45min&#10;Sabato – Lungo Z2 2h outdoor"></textarea>
+          </div>
+          <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="generateAndDownloadICS()" id="btnGenerateICS">📅 Genera ICS</button>
+            <span id="icsStatus" style="font-size:.85rem;color:var(--text2)"></span>
           </div>
         </div>
 
@@ -595,21 +599,6 @@
     </div>
   </div>
 
-  <!-- New Plan Modal -->
-  <div class="modal" id="modalNewPlan">
-    <div class="modal-header"><h3>Crea piano con AI 🧠</h3><button class="modal-close" onclick="closeModal()">×</button></div>
-    <div class="modal-body">
-      <div class="form-group">
-        <label>Descrivi il tuo obiettivo</label>
-        <textarea id="planRequest" rows="4" placeholder="es. Voglio correre una mezza maratona in 4 mesi, mi alleno 4 volte a settimana, sono un corridore intermedio"></textarea>
-      </div>
-      <p class="hint">Claude genererà un piano dettagliato con sessioni settimanali personalizzate.</p>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
-      <button class="btn btn-primary" onclick="generatePlan()">Genera piano</button>
-    </div>
-  </div>
 
   <!-- Adjust Plan Modal -->
   <div class="modal" id="modalAdjustPlan">
@@ -703,112 +692,6 @@
     </div>
   </div>
 
-  <!-- Weekly Plan Modal -->
-  <div class="modal modal-wide" id="modalWeeklyPlan">
-    <div class="modal-header">
-      <h3>🗓️ Genera piano settimanale</h3>
-      <button class="modal-close" onclick="closeModal()">×</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-row">
-        <div class="form-group">
-          <label>Periodo</label>
-          <select id="wpPeriod">
-            <option value="current_week">Settimana corrente</option>
-            <option value="next_week">Prossima settimana</option>
-            <option value="two_weeks">2 settimane</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Obiettivo settimana</label>
-          <select id="wpObjective">
-            <option value="recupero">🟢 Recupero / scarico</option>
-            <option value="base aerobica" selected>🔵 Base aerobica (Z2)</option>
-            <option value="qualità">🟡 Qualità (sweet spot / tempo)</option>
-            <option value="pre-gara">🏁 Pre-gara / picco forma</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label>Giorni disponibili</label>
-        <div class="days-checkbox-row">
-          <label class="day-check"><input type="checkbox" name="wpDay" value="monday" checked> Lun</label>
-          <label class="day-check"><input type="checkbox" name="wpDay" value="tuesday" checked> Mar</label>
-          <label class="day-check"><input type="checkbox" name="wpDay" value="wednesday"> Mer</label>
-          <label class="day-check"><input type="checkbox" name="wpDay" value="thursday" checked> Gio</label>
-          <label class="day-check"><input type="checkbox" name="wpDay" value="friday"> Ven</label>
-          <label class="day-check"><input type="checkbox" name="wpDay" value="saturday" checked> Sab</label>
-          <label class="day-check"><input type="checkbox" name="wpDay" value="sunday"> Dom</label>
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label>Evento target (opzionale)</label>
-          <input type="text" id="wpEventName" placeholder="es. Granfondo Strade Bianche" />
-        </div>
-        <div class="form-group">
-          <label>Data evento</label>
-          <input type="date" id="wpEventDate" />
-        </div>
-      </div>
-
-      <div class="form-group" style="margin-top:.25rem">
-        <label>Note aggiuntive / contesto libero <span style="font-weight:400;color:var(--text2)">(opzionale)</span></label>
-        <textarea id="wpNotes" rows="3" placeholder="es. martedì ho una riunione fino alle 20, venerdì preferisco riposare, voglio fare il Novecolli il 24 maggio al 100%, giovedì e sabato sono disponibile solo al mattino..."></textarea>
-      </div>
-
-      <div id="wpError" style="display:none;color:var(--danger);font-size:.85rem;margin-top:.5rem"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
-      <button class="btn btn-primary" onclick="generateWeeklyPlan()" id="wpGenerateBtn">🧠 Genera piano</button>
-    </div>
-  </div>
-
-  <!-- Edit Session Modal -->
-  <div class="modal" id="modalEditSession">
-    <div class="modal-header">
-      <h3>✏️ Modifica sessione</h3>
-      <button class="modal-close" onclick="closeModal()">×</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-row">
-        <div class="form-group">
-          <label>Data</label>
-          <input type="date" id="esDate" />
-        </div>
-        <div class="form-group">
-          <label>Tipo</label>
-          <select id="esType">
-            <option value="recovery">🟢 Recupero</option>
-            <option value="base">🔵 Base Z2</option>
-            <option value="long">🔵 Lungo Z2</option>
-            <option value="sweetspot">🟡 Sweet Spot</option>
-            <option value="tempo">🟠 Tempo</option>
-            <option value="vo2max">🔴 VO2max</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Durata (min)</label>
-          <input type="number" id="esDuration" min="15" max="300" />
-        </div>
-      </div>
-      <div class="form-group">
-        <label>Titolo</label>
-        <input type="text" id="esName" />
-      </div>
-      <div class="form-group">
-        <label>Descrizione</label>
-        <textarea id="esDescription" rows="3"></textarea>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
-      <button class="btn btn-primary" onclick="saveSessionEdit()">Salva</button>
-    </div>
-  </div>
 
   <!-- .ZWO Generator Modal -->
   <div class="modal" id="modalZwo">
@@ -851,20 +734,6 @@
     </div>
   </div>
 
-  <!-- Exercise Detail Modal -->
-  <div class="modal modal-wide" id="modalExerciseDetail">
-    <div class="modal-header">
-      <h3 id="exerciseDetailTitle">📋 Esercizi</h3>
-      <button class="modal-close" onclick="closeModal()">×</button>
-    </div>
-    <div class="modal-body">
-      <p id="exerciseDetailDesc" style="color:var(--text2);font-size:.88rem;margin-bottom:1.25rem"></p>
-      <div id="exerciseDetailList"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal()">Chiudi</button>
-    </div>
-  </div>
 
   <script src="/static/js/api.js"></script>
   <script src="/static/js/charts.js"></script>

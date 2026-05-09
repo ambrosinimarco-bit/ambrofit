@@ -396,6 +396,15 @@ async function loadTraining() {
   const { plan, sessions } = await api.getPlan(USER_ID).catch(() => ({ plan: null, sessions: [] }));
   renderPlanHeader(plan);
   renderSessions(sessions);
+  // Default ICS week start to current Monday
+  const el = document.getElementById('icsWeekStart');
+  if (el && !el.value) {
+    const today = new Date();
+    const diff = (today.getDay() + 6) % 7; // days since Monday
+    const mon = new Date(today);
+    mon.setDate(today.getDate() - diff);
+    el.value = mon.toLocaleDateString('sv-SE');
+  }
 }
 
 function renderPlanHeader(plan) {
@@ -833,7 +842,6 @@ function openAddModal() {
   else openAddMealModal();
 }
 
-function openNewPlanModal() { openModal('modalNewPlan'); }
 function openAdjustPlanModal() { openModal('modalAdjustPlan'); }
 
 async function saveMeal() {
@@ -893,21 +901,6 @@ async function saveActivity() {
   }
 }
 
-async function generatePlan() {
-  const req = getVal('planRequest');
-  if (!req.trim()) { alert('Descrivi il tuo obiettivo'); return; }
-  closeModal();
-  document.getElementById('trainingPlanHeader').innerHTML = '<p style="color:var(--text2)">⏳ Generazione piano in corso con Claude AI...</p>';
-  document.getElementById('weeklyPlanPreview').style.display = 'none';
-  _generatedPlan = null;
-  try {
-    await api.generatePlan(USER_ID, req);
-    await loadTraining();
-  } catch(e) {
-    alert('Errore generazione piano: ' + e.message);
-    await loadTraining();
-  }
-}
 
 async function submitPlanAdjustment() {
   const data = {
@@ -1388,281 +1381,40 @@ function renderRpePowerChart(rides) {
   });
 }
 
-// ─── Weekly Plan Generator ────────────────────────────────────────
-let _generatedPlan = null;
-let _editingSessionIdx = -1;
 
-function openWeeklyPlanModal() {
-  document.getElementById('wpError').style.display = 'none';
-  document.getElementById('wpGenerateBtn').disabled = false;
-  document.getElementById('wpGenerateBtn').textContent = '🧠 Genera piano';
-  openModal('modalWeeklyPlan');
-}
 
-let _planPollingJobId = null;
+// ─── ICS Generator ────────────────────────────────────────────────
+async function generateAndDownloadICS() {
+  const planText = document.getElementById('icsPlanText').value.trim();
+  const weekStart = document.getElementById('icsWeekStart').value;
+  const statusEl = document.getElementById('icsStatus');
+  const btn = document.getElementById('btnGenerateICS');
 
-async function generateWeeklyPlan() {
-  const btn = document.getElementById('wpGenerateBtn');
-  const errEl = document.getElementById('wpError');
-  errEl.style.display = 'none';
+  if (!planText) { alert('Incolla il piano dal Coach prima di generare il calendario.'); return; }
+  if (!weekStart) { alert('Seleziona la data di inizio settimana.'); return; }
+
   btn.disabled = true;
-  btn.textContent = '⏳ Avvio…';
+  btn.textContent = '⏳ Generazione…';
+  statusEl.textContent = '';
 
-  const period = document.getElementById('wpPeriod').value;
-  const objective = document.getElementById('wpObjective').value;
-  const availableDays = [...document.querySelectorAll('input[name="wpDay"]:checked')].map(el => el.value);
-  const eventName = document.getElementById('wpEventName').value.trim() || null;
-  const eventDate = document.getElementById('wpEventDate').value || null;
-  const userNotes = document.getElementById('wpNotes').value.trim() || null;
-
-  let jobId;
   try {
-    const res = await api.startWeeklyPlan(USER_ID, {
-      period, objective,
-      available_days: availableDays,
-      target_event_name: eventName,
-      target_event_date: eventDate,
-      user_notes: userNotes,
-    });
-    jobId = res.job_id;
-  } catch (err) {
-    errEl.textContent = 'Errore: ' + err.message;
-    errEl.style.display = 'block';
-    btn.disabled = false;
-    btn.textContent = '🧠 Genera piano';
-    return;
-  }
-
-  closeModal();
-  document.getElementById('weeklyPlanPreview').style.display = 'none';
-  document.getElementById('trainingPlanHeader').innerHTML =
-    '<p style="color:var(--text2)">⏳ Claude sta pianificando…</p>';
-  _pollPlanJob(jobId, btn); // fire-and-forget: polling updates UI when ready
-}
-
-async function _pollPlanJob(jobId, btn) {
-  _planPollingJobId = jobId;
-  const MAX_POLLS = 40; // 40 × 3s = 120s max wait
-  for (let i = 0; i < MAX_POLLS; i++) {
-    await new Promise(r => setTimeout(r, 3000));
-    if (_planPollingJobId !== jobId) return; // superseded by a newer request
-
-    let data;
-    try { data = await api.getPlanStatus(jobId); }
-    catch (_) { continue; } // transient network error — keep polling
-
-    if (data.status === 'ready') {
-      _generatedPlan = data;
-      renderWeeklyPlanPreview(data);
-      btn.disabled = false;
-      btn.textContent = '🧠 Genera piano';
-      return;
-    }
-    if (data.status === 'error') {
-      document.getElementById('trainingPlanHeader').innerHTML =
-        '<p style="color:var(--danger)">❌ Errore nella generazione del piano</p>';
-      alert('Errore generazione piano:\n' + data.error);
-      btn.disabled = false;
-      btn.textContent = '🧠 Genera piano';
-      return;
-    }
-    // still pending — show elapsed time
-    document.getElementById('trainingPlanHeader').innerHTML =
-      `<p style="color:var(--text2)">⏳ Claude sta pianificando… ${(i + 1) * 3}s</p>`;
-  }
-  document.getElementById('trainingPlanHeader').innerHTML =
-    '<p style="color:var(--danger)">❌ Timeout: riprova</p>';
-  btn.disabled = false;
-  btn.textContent = '🧠 Genera piano';
-}
-
-function renderWeeklyPlanPreview(data) {
-  const preview = document.getElementById('weeklyPlanPreview');
-  const summaryEl = document.getElementById('weeklyPlanSummary');
-  const sessionsEl = document.getElementById('weeklyPlanSessions');
-  const btnZwos = document.getElementById('btnDownloadZwos');
-
-  const { sessions = [], summary = '', metrics = {}, zwo_count = 0 } = data;
-
-  summaryEl.textContent = summary;
-  if (metrics.tsb !== undefined) {
-    summaryEl.textContent += ` | TSB ${metrics.tsb} | CTL ${metrics.ctl} | ATL ${metrics.atl}`;
-  }
-
-  btnZwos.style.display = zwo_count > 0 ? '' : 'none';
-
-  const _ICONS = { recovery: '🟢', base: '🔵', long: '🔵', sweetspot: '🟡', tempo: '🟠', vo2max: '🔴', strength: '🏋️', mobility: '🧘', rest: '⬜' };
-  const _LABEL = { recovery: 'Recupero', base: 'Base Z2', long: 'Lungo Z2', sweetspot: 'Sweet Spot', tempo: 'Tempo', vo2max: 'VO2max', strength: 'Forza', mobility: 'Mobilità', rest: 'Riposo' };
-  const ftp = 202;
-
-  sessionsEl.innerHTML = sessions.map((s, idx) => {
-    const type = s.type || 'base';
-    const icon = _ICONS[type] || '🔵';
-    const label = _LABEL[type] || type;
-    if (type === 'rest') {
-      return `<div class="wp-session wp-rest">
-        <div class="wp-day">${s.day_name || ''} <span class="wp-date">${s.date || ''}</span></div>
-        <div class="wp-type">${icon} Riposo</div>
-        <div class="wp-actions"><button class="wp-btn" onclick="editSessionCard(${idx})">✏️</button><button class="wp-btn wp-btn-del" onclick="deleteSessionCard(${idx})">🗑️</button></div>
-      </div>`;
-    }
-    const indoorBadge = s.indoor ? '<span class="wp-badge">🏠 indoor</span>' : '<span class="wp-badge wp-outdoor">🌿 outdoor</span>';
-    const pwrLine = s.power_targets?.main ? `<span class="wp-power">~${s.power_targets.main}W</span>` : '';
-    let segSummary = '';
-    if (s.segments) {
-      const segs = s.segments.map(seg => {
-        if (seg.type === 'Warmup') return `Risc. ${seg.duration_min}'`;
-        if (seg.type === 'Cooldown') return `Def. ${seg.duration_min}'`;
-        if (seg.type === 'SteadyState') return `Steady ${seg.duration_min}'@${Math.round(seg.power * ftp)}W`;
-        if (seg.type === 'IntervalsT') return `${seg.repeat}×${seg.on_duration_min}'@${Math.round(seg.on_power * ftp)}W`;
-        return '';
-      }).filter(Boolean).join(' · ');
-      segSummary = `<div class="wp-segments">${segs}</div>`;
-    }
-    const zwoBtn = s.segments ? `<button class="wp-btn" title="Scarica .zwo" onclick="downloadSessionZwo(${idx})">🚴</button>` : '';
-    const exBtn = s.exercises?.length ? `<button class="wp-btn" title="Vedi esercizi" onclick="showExerciseDetail(${idx})">📋 Esercizi</button>` : '';
-    const typeClass = type === 'strength' ? ' wp-strength' : type === 'mobility' ? ' wp-mobility' : '';
-    return `<div class="wp-session${typeClass}">
-      <div class="wp-day">${s.day_name || ''} <span class="wp-date">${s.date || ''}</span></div>
-      <div class="wp-type">${icon} ${label} ${indoorBadge} ${pwrLine}</div>
-      <div class="wp-name">${esc(s.name || '')}</div>
-      <div class="wp-desc">${esc(s.description || '')}</div>
-      ${segSummary}
-      <div class="wp-actions">${exBtn}${zwoBtn}<button class="wp-btn" onclick="editSessionCard(${idx})">✏️</button><button class="wp-btn wp-btn-del" onclick="deleteSessionCard(${idx})">🗑️</button></div>
-    </div>`;
-  }).join('');
-
-  preview.style.display = 'block';
-  preview.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function downloadPlanICS() {
-  if (!_generatedPlan?.ics_content) return;
-  const blob = new Blob([_generatedPlan.ics_content], { type: 'text/calendar;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'piano_allenamento.ics';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-function downloadPlanZwos() {
-  if (!_generatedPlan?.zwo_zip_b64) return;
-  const b64 = _generatedPlan.zwo_zip_b64;
-  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-  const blob = new Blob([bytes], { type: 'application/zip' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'piano_allenamento_zwo.zip';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-async function savePlanToDB() {
-  if (!_generatedPlan?.sessions?.length) return;
-  const btn = document.getElementById('btnSavePlan');
-  btn.disabled = true;
-  btn.textContent = '⏳ Salvataggio...';
-  try {
-    const p = _generatedPlan.period || {};
-    const planName = `Piano ${_generatedPlan.sessions[0]?.type || 'allenamento'} ${p.start || ''} → ${p.end || ''}`;
-    await api.saveWeeklyPlan(USER_ID, planName, _generatedPlan.sessions);
-    document.getElementById('weeklyPlanPreview').style.display = 'none';
-    _generatedPlan = null;
-    await loadTraining();
-  } catch (err) {
-    btn.textContent = '⚠️ Errore salvataggio';
-    btn.disabled = false;
-  }
-}
-
-function editSessionCard(idx) {
-  if (!_generatedPlan?.sessions) return;
-  _editingSessionIdx = idx;
-  const s = _generatedPlan.sessions[idx];
-  document.getElementById('esDate').value = s.date || '';
-  document.getElementById('esType').value = s.type || 'base';
-  document.getElementById('esDuration').value = s.duration_min || 60;
-  document.getElementById('esName').value = s.name || '';
-  document.getElementById('esDescription').value = s.description || '';
-  openModal('modalEditSession');
-}
-
-function saveSessionEdit() {
-  if (_editingSessionIdx < 0 || !_generatedPlan?.sessions) return;
-  const s = _generatedPlan.sessions[_editingSessionIdx];
-  s.date = document.getElementById('esDate').value;
-  s.type = document.getElementById('esType').value;
-  s.duration_min = parseInt(document.getElementById('esDuration').value) || s.duration_min;
-  s.name = document.getElementById('esName').value.trim();
-  s.description = document.getElementById('esDescription').value.trim();
-  // Update day_name from new date
-  if (s.date) {
-    const _DAY_IT = ['lunedì','martedì','mercoledì','giovedì','venerdì','sabato','domenica'];
-    const d = new Date(s.date + 'T00:00:00');
-    s.day_name = _DAY_IT[d.getDay() === 0 ? 6 : d.getDay() - 1];
-  }
-  closeModal();
-  renderWeeklyPlanPreview(_generatedPlan);
-}
-
-function deleteSessionCard(idx) {
-  if (!_generatedPlan?.sessions) return;
-  _generatedPlan.sessions.splice(idx, 1);
-  renderWeeklyPlanPreview(_generatedPlan);
-}
-
-async function downloadSessionZwo(idx) {
-  if (!_generatedPlan?.sessions) return;
-  const s = _generatedPlan.sessions[idx];
-  if (!s.segments) return;
-  try {
-    const data = await api.generateSessionZwo(s.name || 'Workout', s.description || '', s.segments, 202);
-    const blob = new Blob([data.xml], { type: 'application/octet-stream' });
+    const data = await api.generateIcs(USER_ID, planText, weekStart);
+    const blob = new Blob([data.ics_content], { type: 'text/calendar;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = data.filename;
-    document.body.appendChild(a); a.click();
+    a.href = url;
+    a.download = `piano_allenamento_${weekStart}.ics`;
+    document.body.appendChild(a);
+    a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    statusEl.textContent = `✅ ${data.session_count} sessioni nel calendario`;
   } catch (err) {
-    alert('Errore generazione .zwo: ' + err.message);
+    statusEl.textContent = '❌ Errore: ' + err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📅 Genera ICS';
   }
-}
-
-function showExerciseDetail(idx) {
-  if (!_generatedPlan?.sessions) return;
-  const s = _generatedPlan.sessions[idx];
-  if (!s.exercises?.length) return;
-
-  document.getElementById('exerciseDetailTitle').textContent =
-    (s.type === 'mobility' ? '🧘' : '🏋️') + ' ' + (s.name || 'Esercizi');
-  document.getElementById('exerciseDetailDesc').textContent = s.description || '';
-
-  const list = document.getElementById('exerciseDetailList');
-  list.innerHTML = s.exercises.map((ex, i) => `
-    <div class="exercise-item">
-      <div class="exercise-header">
-        <span class="exercise-num">${i + 1}</span>
-        <span class="exercise-name">${esc(ex.name || '')}</span>
-        ${ex.equipment ? `<span class="exercise-equip-badge">${esc(ex.equipment)}</span>` : ''}
-        <span class="exercise-sets">${esc(ex.sets_reps || '')}</span>
-      </div>
-      <div class="exercise-desc">${esc(ex.description || '')}</div>
-      <div class="exercise-meta">
-        ${ex.rest_sec ? `<span>⏱ Recupero: ${ex.rest_sec}s</span>` : ''}
-        ${ex.notes ? `<span class="exercise-notes">💡 ${esc(ex.notes)}</span>` : ''}
-      </div>
-    </div>
-  `).join('');
-
-  openModal('modalExerciseDetail');
 }
 
 // ─── ZWO Generator ────────────────────────────────────────────────

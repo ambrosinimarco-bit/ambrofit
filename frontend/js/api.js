@@ -45,22 +45,12 @@ const api = {
 
   // Training
   getPlan:        (uid) => apiFetch(`/api/training/plan/${uid}`),
-  generatePlan:   (uid, req) => apiFetch(`/api/training/plan/${uid}/generate?request=${encodeURIComponent(req)}`, { method: 'POST' }),
   adjustPlan:     (uid, data) => apiFetch(`/api/training/plan/${uid}/adjust`, { method: 'POST', body: data }),
   updateSession:  (sid, data) => apiFetch(`/api/training/session/${sid}`, { method: 'PATCH', body: data }),
   getSessions:    (uid, days=14) => apiFetch(`/api/training/sessions/${uid}?days=${days}`),
-  startWeeklyPlan: (uid, params) => apiFetch('/api/training/generate-weekly-plan', {
+  generateIcs:    (uid, planText, weekStart) => apiFetch('/api/training/generate-ics', {
     method: 'POST',
-    body: { user_id: uid, ...params },
-  }),
-  getPlanStatus: (jobId) => apiFetch(`/api/training/plan-status/${jobId}`),
-  saveWeeklyPlan: (uid, planName, sessions) => apiFetch('/api/training/save-weekly-plan', {
-    method: 'POST',
-    body: { user_id: uid, plan_name: planName, sessions },
-  }),
-  generateSessionZwo: (name, description, segments, ftp = 202) => apiFetch('/api/training/generate-session-zwo', {
-    method: 'POST',
-    body: { name, description, segments, ftp },
+    body: { user_id: uid, plan_text: planText, week_start: weekStart },
   }),
   generateZwo:    (uid, sessionType, durationMin) => apiFetch('/api/training/generate-zwo', {
     method: 'POST',
