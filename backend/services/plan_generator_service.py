@@ -2,6 +2,7 @@
 import base64
 import io
 import json
+import re
 import uuid
 import zipfile
 from datetime import date, datetime, timedelta, timezone
@@ -18,6 +19,86 @@ client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 _DAY_IT = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
 _DAY_EN = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+_MONTH_IT = {
+    "gennaio": 1, "febbraio": 2, "marzo": 3, "aprile": 4,
+    "maggio": 5, "giugno": 6, "luglio": 7, "agosto": 8,
+    "settembre": 9, "ottobre": 10, "novembre": 11, "dicembre": 12,
+}
+
+# Pattern nomi evento comuni (esteso facilmente)
+_EVENT_NAMES_RE = re.compile(
+    r"(gran\s*fondo\s+[\w\s]+?(?=\s+il|\s+del|\s+a\s|\s+\d|$)|"
+    r"novecolli|sportful|granfondo|medio\s*fondo\s+[\w\s]+?(?=\s+il|\s+\d|$)|"
+    r"(?:gara|evento|corsa|fondista)[:\s]+([^\.,\n]+))",
+    re.IGNORECASE,
+)
+
+# Formati data che Claude/utenti usano nelle note
+_DATE_RE = re.compile(
+    r"(?:il\s+)?(\d{1,2})\s+(" + "|".join(_MONTH_IT.keys()) + r")\s+(\d{4})"
+    r"|(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})",
+    re.IGNORECASE,
+)
+
+_DAY_MENTIONS = {
+    "lunedì": "monday", "lunedi": "monday",
+    "martedì": "tuesday", "martedi": "tuesday",
+    "mercoledì": "wednesday", "mercoledi": "wednesday",
+    "giovedì": "thursday", "giovedi": "thursday",
+    "venerdì": "friday", "venerdi": "friday",
+    "sabato": "saturday",
+    "domenica": "sunday",
+}
+
+
+def _extract_event_from_notes(notes: str) -> tuple[str | None, str | None]:
+    """Estrae (nome_evento, data_ISO) dalle note libere dell'utente.
+    Priorità assoluta: se l'utente lo ha scritto nelle note, quella è la data giusta."""
+    if not notes:
+        return None, None
+
+    event_name: str | None = None
+    event_date: str | None = None
+
+    # ── Data ──────────────────────────────────────────────────────────────────
+    m = _DATE_RE.search(notes.lower())
+    if m:
+        if m.group(1):                         # DD mese YYYY
+            day, month_str, year = int(m.group(1)), m.group(2), int(m.group(3))
+            month = _MONTH_IT.get(month_str.lower())
+            if month:
+                try:
+                    event_date = date(year, month, day).isoformat()
+                except ValueError:
+                    pass
+        else:                                   # DD/MM/YYYY
+            day, month, year = int(m.group(4)), int(m.group(5)), int(m.group(6))
+            try:
+                event_date = date(year, month, day).isoformat()
+            except ValueError:
+                pass
+
+    # ── Nome ──────────────────────────────────────────────────────────────────
+    m2 = _EVENT_NAMES_RE.search(notes)
+    if m2:
+        raw = (m2.group(1) or m2.group(2) or "").strip()
+        event_name = re.sub(r"\s+", " ", raw).title()
+
+    return event_name or None, event_date or None
+
+
+def _extract_days_from_notes(notes: str) -> list[str]:
+    """Estrae i giorni disponibili dalle note (es. 'disponibile martedì e giovedì')."""
+    if not notes:
+        return []
+    found = []
+    notes_lower = notes.lower()
+    for it, en in _DAY_MENTIONS.items():
+        if it in notes_lower and en not in found:
+            found.append(en)
+    # Riordina per giorno della settimana
+    return [d for d in _DAY_EN if d in found]
 
 # ── TSB helpers ──────────────────────────────────────────────────────────────
 
@@ -221,14 +302,56 @@ def generate_weekly_plan(
     ).eq("user_id", user_id).gte("activity_date", since_90).execute().data or []
     ctl, atl, tsb = _calc_fitness(acts, ftp)
 
+    # Extract event/days from free-text notes (priority over UI fields)
+    if user_notes:
+        extracted_name, extracted_date = _extract_event_from_notes(user_notes)
+        if not target_event_name:
+            target_event_name = extracted_name
+        if not target_event_date:
+            target_event_date = extracted_date
+        if not available_days:
+            available_days = _extract_days_from_notes(user_notes) or None
+
+    # Post-long-ride detection: if 3+ hour activity in last 2 days, next day = rest/recovery
+    today = date.today()
+    since_2days = (today - timedelta(days=2)).isoformat()
+    recent_acts = db.table("activities").select("activity_date,duration_min")\
+        .eq("user_id", user_id).gte("activity_date", since_2days).execute().data or []
+    post_long_block = ""
+    for a in recent_acts:
+        if float(a.get("duration_min") or 0) >= 180:
+            act_date = a.get("activity_date", "")
+            if act_date == today.isoformat():
+                restrict_date = (today + timedelta(days=1)).isoformat()
+                post_long_block = (
+                    f"\n⚠️ POST-LUNGO: attività di 3+ ore OGGI ({act_date}). "
+                    f"Il giorno {restrict_date} DEVE essere type='rest' o recupero Z1 MAX 45min. "
+                    "Nessuna sessione intensa.\n"
+                )
+            elif act_date == (today - timedelta(days=1)).isoformat():
+                restrict_date = today.isoformat()
+                post_long_block = (
+                    f"\n⚠️ POST-LUNGO: attività di 3+ ore IERI ({act_date}). "
+                    f"Il giorno {restrict_date} DEVE essere type='rest' o recupero Z1 MAX 45min. "
+                    "Nessuna sessione intensa.\n"
+                )
+            break  # first long ride found is enough
+
     # Period
     start_date, end_date = _get_period_dates(period)
 
-    # Available days → Italian labels
+    # Available days → hard constraint
     if available_days:
         avail_it = [_DAY_IT[_DAY_EN.index(d)] for d in available_days if d in _DAY_EN]
+        avail_block = (
+            f"\n🔒 VINCOLO RIGIDO GIORNI DISPONIBILI: le sessioni di allenamento sono CONSENTITE "
+            f"SOLO nei giorni: {', '.join(avail_it)}.\n"
+            "Tutti gli altri giorni DEVONO avere type=\"rest\" OBBLIGATORIAMENTE — "
+            "anche se sarebbe utile allenarsi. Non ci sono eccezioni.\n"
+        )
     else:
         avail_it = _DAY_IT
+        avail_block = ""
 
     # Build date list
     date_list, d = [], start_date
@@ -251,11 +374,10 @@ def generate_weekly_plan(
 
     # ── Chiamata 1: struttura del piano (senza dettaglio esercizi) ──────────────
     prompt = f"""Crea un piano di allenamento ciclismo per Marco.
-{user_notes_block}
+{user_notes_block}{avail_block}{post_long_block}
 PERIODO: {start_date} → {end_date}
 Giorni: {", ".join(date_list)}
-Obiettivo: {objective}
-Giorni disponibili: {", ".join(avail_it)}{target_block}
+Obiettivo: {objective}{target_block}
 FTP {ftp}W | CTL {ctl} | ATL {atl} | TSB {tsb}
 Vincoli medici: {medical}
 Contesto: {coaching}
@@ -364,7 +486,7 @@ JSON:
             fill_idx = entry.get("index", 0)
             if fill_idx < len(sm_indices):
                 orig_idx, _ = sm_indices[fill_idx]
-                sessions[orig_idx]["exercises"] = entry.get("exercises", [])
+                sessions[orig_idx]["exercises"] = entry.get("exercises") or []
 
     ics_content = generate_ics(sessions, ftp)
     zwo_zip_b64 = generate_zwos_zip(sessions, ftp)
