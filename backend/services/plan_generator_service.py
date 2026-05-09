@@ -113,15 +113,17 @@ def generate_ics(sessions: list[dict], ftp: int = 202) -> str:
         for seg in segs:
             t = seg.get("type", "")
             if t == "Warmup":
-                struct.append(f"Riscaldamento {seg['duration_min']}min")
+                struct.append(f"Riscaldamento {seg.get('duration_min',0)}min")
             elif t == "Cooldown":
-                struct.append(f"Defaticamento {seg['duration_min']}min")
+                struct.append(f"Defaticamento {seg.get('duration_min',0)}min")
             elif t == "SteadyState":
-                struct.append(f"Steady {seg['duration_min']}min@{round(float(seg['power'])*ftp)}W")
+                struct.append(f"Steady {seg.get('duration_min',0)}min@{round(float(seg.get('power',0.7))*ftp)}W")
             elif t == "IntervalsT":
                 struct.append(
-                    f"{seg['repeat']}x{seg['on_duration_min']}min@{round(float(seg['on_power'])*ftp)}W"
-                    f"/{seg['off_duration_min']}min@{round(float(seg['off_power'])*ftp)}W"
+                    f"{seg.get('repeat',4)}x{seg.get('on_duration_min',1)}min"
+                    f"@{round(float(seg.get('on_power',1.0))*ftp)}W"
+                    f"/{seg.get('off_duration_min',1)}min"
+                    f"@{round(float(seg.get('off_power',0.55))*ftp)}W"
                 )
         if struct:
             desc_parts.append("Struttura: " + " | ".join(struct))
@@ -247,58 +249,32 @@ def generate_weekly_plan(
             "Gestisci il carico in modo da arrivare all'evento con TSB positivo (+5/+15).\n"
         )
 
-    prompt = f"""Crea un piano di allenamento ciclismo dettagliato per Marco.
+    # ── Chiamata 1: struttura del piano (senza dettaglio esercizi) ──────────────
+    prompt = f"""Crea un piano di allenamento ciclismo per Marco.
 {user_notes_block}
 PERIODO: {start_date} → {end_date}
-Giorni del periodo: {", ".join(date_list)}
-Obiettivo settimana: {objective}
-Giorni disponibili per allenarsi: {", ".join(avail_it)}{target_block}
-PROFILO:
-FTP {ftp}W | Peso {weight_kg}kg
-CTL {ctl} | ATL {atl} | TSB {tsb}
+Giorni: {", ".join(date_list)}
+Obiettivo: {objective}
+Giorni disponibili: {", ".join(avail_it)}{target_block}
+FTP {ftp}W | CTL {ctl} | ATL {atl} | TSB {tsb}
 Vincoli medici: {medical}
 Contesto: {coaching}
 
 Zone FTP: Z1=0.50-0.56 | Z2=0.56-0.75 | SS=0.84-0.95 | Tempo=0.76-0.90 | VO2max=1.06-1.20
 
-SESSIONI DI FORZA/MOBILITÀ (type="strength" o type="mobility"):
-- Per queste sessioni: segments=null, indoor=true, power_targets=null.
-- Aggiungi campo "exercises" con lista dettagliata degli esercizi.
-- Attrezzatura disponibile: TRX, bosu, tappetino, elastici (varie resistenze), manubri leggeri/medi, panca.
-- VINCOLI MEDICI ESERCIZI (CRITICO, inderogabili):
-  * NO pressione diretta zona inguinale (no leg press pesante, no squat profondi con carico)
-  * NO addominali massimali (no crunch pesanti, no sit-up, no leg raise pesanti)
-  * Preferire esercizi in piedi, TRX, o plank leggeri
-  * Focus funzionale ciclismo: glutei, quadricipiti, dorsali, spalle, core stabilità
-- Formato campo "exercises":
-  [
-    {{
-      "name": "TRX Row",
-      "equipment": "TRX",
-      "description": "Inclinati con i piedi avanti verso il punto di ancoraggio. Tira le maniglie verso il petto flettendo i gomiti, tenendo il corpo rigido.",
-      "sets_reps": "3×12",
-      "rest_sec": 60,
-      "notes": "Core attivo. Gomiti vicini al busto. Evita di inarcare la schiena."
-    }}
-  ]
-- Per "strength": 6-10 esercizi focalizzati su forza e stabilità per il ciclismo.
-- Per "mobility": 6-10 esercizi di allungamento, mobilità articolare, rilassamento muscolare post-bici.
+LIMITI DURATA:
+- Infrasettimanali lun-ven: MAX 75min / MAX 40km outdoor. Di norma indoor.
+- Lungo weekend: outdoor, 90-180min, 60-100km.
+- Recupero: MAX 60min. Indoor → solo duration_min, no distanza.
 
-LIMITI DURATA (rispettare rigorosamente):
-- Sessioni infrasettimanali lun-ven: MAX 75 min oppure MAX 40km outdoor. Di norma indoor sui rulli.
-- Solo il lungo del weekend (sab o dom): può essere outdoor, 90-180 min, 60-100km.
-- Sessioni di recupero: MAX 45-60 min.
-- Se una sessione è indoor non inserire distanza (solo duration_min).
-- NON assegnare mai >40km in un giorno infrasettimanale. Mai >90 min infrasettimanale.
+REGOLE:
+- Una voce per OGNI giorno (riposo: type="rest", segments=null, exercises=null)
+- Indoor cycling: segments con Warmup+corpo+Cooldown (per .zwo). Riscaldamento ≥8min.
+- Outdoor cycling: segments=null
+- Sessioni strength/mobility: segments=null, exercises=null (dettaglio aggiunto dopo)
+- TSB<-10 → recupero/Z2. TSB>+10 → qualità. Rispetta vincoli medici.
 
-REGOLE GENERALI:
-- Genera una voce per OGNI giorno del periodo (anche i giorni di riposo: type="rest", segments=null)
-- Sessioni indoor hanno segments per il file .zwo (Warmup + corpo + Cooldown)
-- Sessioni outdoor: indoor=false, segments=null
-- TSB<-10 → privilegia recupero/Z2. TSB>+10 → c'è spazio per qualità. TSB 0-10 → mix equilibrato.
-- Rispetta vincoli medici. Riscaldamento sempre ≥8min.
-
-JSON esatto:
+JSON:
 {{
   "sessions": [
     {{
@@ -308,7 +284,7 @@ JSON esatto:
       "name": "Sweet Spot 45min",
       "duration_min": 45,
       "indoor": true,
-      "description": "Obiettivo e istruzioni (2-3 frasi concrete)",
+      "description": "1-2 frasi obiettivo",
       "power_targets": {{"main": 178, "zone": "Z3-Z4"}},
       "segments": [
         {{"type":"Warmup","duration_min":10,"power_low":0.50,"power_high":0.75}},
@@ -316,41 +292,79 @@ JSON esatto:
         {{"type":"Cooldown","duration_min":7,"power_high":0.60,"power_low":0.35}}
       ],
       "exercises": null
-    }},
-    {{
-      "day_name": "mercoledì",
-      "date": "YYYY-MM-DD",
-      "type": "strength",
-      "name": "Forza funzionale 40min",
-      "duration_min": 40,
-      "indoor": true,
-      "description": "Circuito forza funzionale per il ciclismo. Focus glutei e dorsali.",
-      "power_targets": null,
-      "segments": null,
-      "exercises": [
-        {{"name":"TRX Row","equipment":"TRX","description":"Tira le maniglie verso il petto, corpo rigido.","sets_reps":"3×12","rest_sec":60,"notes":"Gomiti vicini al busto."}},
-        {{"name":"Romanian Deadlift","equipment":"manubri","description":"Piedi larghezza spalle, scendi con manubri lungo le gambe mantenendo schiena dritta.","sets_reps":"3×10","rest_sec":90,"notes":"Senti lo stretch ai femorali. Nessuna pressione inguinale."}}
-      ]
     }}
   ],
-  "summary": "Logica del piano (3-4 frasi)"
+  "summary": "Logica del piano (2-3 frasi)"
 }}"""
 
-    resp = client.messages.create(
+    resp1 = client.messages.create(
         model="claude-opus-4-7",
-        max_tokens=6000,
+        max_tokens=8000,
         messages=[{"role": "user", "content": prompt}],
     )
-    raw = resp.content[0].text.strip()
-    # Strip markdown code fences if present
-    if raw.startswith("```"):
-        raw = raw.split("```", 2)[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.rstrip("`").strip()
-    plan_data = json.loads(raw)
+    raw1 = resp1.content[0].text.strip()
+    if raw1.startswith("```"):
+        raw1 = raw1.split("```", 2)[1]
+        if raw1.startswith("json"):
+            raw1 = raw1[4:]
+        raw1 = raw1.rstrip("`").strip()
+    plan_data = json.loads(raw1)
     sessions = plan_data.get("sessions", [])
     summary = plan_data.get("summary", "")
+
+    # ── Chiamata 2: esercizi per sessioni strength/mobility ──────────────────
+    sm_indices = [(i, s) for i, s in enumerate(sessions)
+                  if s.get("type") in ("strength", "mobility")]
+    if sm_indices:
+        sessions_desc = "\n".join(
+            f'{fi}. [{s["type"].upper()}] "{s.get("name","")}" {s.get("duration_min",40)}min — {s.get("description","")}'
+            for fi, (_, s) in enumerate(sm_indices)
+        )
+        prompt2 = f"""Genera esercizi dettagliati per queste sessioni di forza/mobilità.
+
+SESSIONI:
+{sessions_desc}
+
+ATTREZZATURA: TRX, bosu, tappetino, elastici, manubri leggeri/medi, panca.
+VINCOLI MEDICI (inderogabili):
+- NO pressione zona inguinale (no leg press, no squat profondi con carico)
+- NO addominali massimali (no crunch pesanti, no sit-up)
+- Focus: glutei, quadricipiti, dorsali, spalle, core stabilità
+Contesto: {coaching} | {medical}
+
+strength → 7-8 esercizi forza/stabilità funzionale ciclismo.
+mobility → 7-8 esercizi stretching/mobilità articolare post-bici.
+description: 1 frase concisa. notes: 1 indicazione tecnica breve.
+
+JSON:
+{{
+  "sessions": [
+    {{
+      "index": 0,
+      "exercises": [
+        {{"name":"TRX Row","equipment":"TRX","description":"Tira le maniglie verso il petto a corpo rigido.","sets_reps":"3×12","rest_sec":60,"notes":"Gomiti vicini al busto."}}
+      ]
+    }}
+  ]
+}}"""
+
+        resp2 = client.messages.create(
+            model="claude-opus-4-7",
+            max_tokens=4000,
+            messages=[{"role": "user", "content": prompt2}],
+        )
+        raw2 = resp2.content[0].text.strip()
+        if raw2.startswith("```"):
+            raw2 = raw2.split("```", 2)[1]
+            if raw2.startswith("json"):
+                raw2 = raw2[4:]
+            raw2 = raw2.rstrip("`").strip()
+        ex_data = json.loads(raw2)
+        for entry in ex_data.get("sessions", []):
+            fill_idx = entry.get("index", 0)
+            if fill_idx < len(sm_indices):
+                orig_idx, _ = sm_indices[fill_idx]
+                sessions[orig_idx]["exercises"] = entry.get("exercises", [])
 
     ics_content = generate_ics(sessions, ftp)
     zwo_zip_b64 = generate_zwos_zip(sessions, ftp)
