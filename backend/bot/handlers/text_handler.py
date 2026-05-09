@@ -1,3 +1,4 @@
+import asyncio
 import io
 import re
 from datetime import date
@@ -304,7 +305,7 @@ async def _handle_zwo_request(update, db, user_id: str, text: str) -> None:
 
     await update.message.reply_text("⚙️ Sto pianificando il workout con Claude AI...")
 
-    workout = plan_zwo_workout(text, ftp)
+    workout = await asyncio.to_thread(plan_zwo_workout, text, ftp)
     xml_content = generate_zwo_xml(workout, ftp, weight_kg)
 
     # Nome file sicuro
@@ -384,7 +385,7 @@ async def _handle_plan_request(update, db, user_id: str, text: str) -> None:
     period_info = plan.get("period", {})
 
     _ICONS = {"recovery": "🟢", "base": "🔵", "long": "🔵", "sweetspot": "🟡",
-              "tempo": "🟠", "vo2max": "🔴", "rest": "⬜"}
+              "tempo": "🟠", "vo2max": "🔴", "strength": "🏋️", "mobility": "🧘", "rest": "⬜"}
 
     lines = []
     for s in sessions:

@@ -1,4 +1,5 @@
 """Coach service con memoria contestuale completa (30gg) e sessioni conversazionali."""
+import asyncio
 import uuid
 import anthropic
 from collections import defaultdict
@@ -352,7 +353,7 @@ Obiettivi: {coaching}
 
 # ── Shared data fetching ───────────────────────────────────────────────────────
 
-async def _build_coach_prompt(user_id: str, exclude_session_id: str | None = None) -> str:
+def _build_coach_prompt(user_id: str, exclude_session_id: str | None = None) -> str:
     """Recupera tutti i dati dal DB e costruisce il system prompt completo."""
     db = get_supabase()
     today_str = date.today().isoformat()
@@ -408,16 +409,19 @@ def _call_claude(system_prompt: str, messages: list[dict]) -> str:
 # ── Entry points ───────────────────────────────────────────────────────────────
 
 async def get_coach_response(user_id: str, message: str) -> str:
-    """Telegram: usa le sessioni in memoria (2 ore di continuità) + storico DB."""
+    """Telegram: usa le sessioni in memoria (2 ore di continuità) + storico DB.
+    Le chiamate bloccanti (DB + Anthropic) girano in thread separati per non
+    congelare l'event loop asyncio del bot."""
     history, session_id = _get_active_session(user_id)
-    system_prompt = await _build_coach_prompt(user_id, exclude_session_id=session_id)
 
     messages = [{"role": m["role"], "content": m["content"]} for m in history]
     messages.append({"role": "user", "content": message})
 
-    reply = _call_claude(system_prompt, messages)
+    system_prompt = await asyncio.to_thread(_build_coach_prompt, user_id, session_id)
+    reply = await asyncio.to_thread(_call_claude, system_prompt, messages)
+
     _save_exchange_memory(user_id, message, reply, session_id)
-    _save_exchange_db(user_id, session_id, message, reply)
+    await asyncio.to_thread(_save_exchange_db, user_id, session_id, message, reply)
     return reply
 
 
@@ -431,9 +435,11 @@ async def get_coach_response_web(
     if not session_id:
         session_id = _generate_session_id()
 
-    system_prompt = await _build_coach_prompt(user_id, exclude_session_id=session_id)
     messages = list(history)
     messages.append({"role": "user", "content": message})
-    reply = _call_claude(system_prompt, messages)
-    _save_exchange_db(user_id, session_id, message, reply)
+
+    system_prompt = await asyncio.to_thread(_build_coach_prompt, user_id, session_id)
+    reply = await asyncio.to_thread(_call_claude, system_prompt, messages)
+
+    await asyncio.to_thread(_save_exchange_db, user_id, session_id, message, reply)
     return reply, session_id

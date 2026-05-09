@@ -38,6 +38,11 @@ async def lifespan(app: FastAPI):
         poll_task = asyncio.create_task(_run_polling(tg_app))
         yield
         poll_task.cancel()
+        try:
+            await poll_task
+        except asyncio.CancelledError:
+            pass
+        await tg_app.updater.stop()
         await tg_app.stop()
         await tg_app.shutdown()
 

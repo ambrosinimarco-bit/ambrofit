@@ -1,6 +1,10 @@
 import asyncio
 import json
+import logging
+import traceback
 from fastapi import APIRouter, HTTPException
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 from datetime import date
 from backend.database.client import get_supabase
@@ -70,6 +74,10 @@ class SaveWeeklyPlanRequest(BaseModel):
 @router.post("/generate-weekly-plan")
 async def generate_weekly_plan_endpoint(body: WeeklyPlanRequest):
     from backend.services.plan_generator_service import generate_weekly_plan
+    logger.info(
+        "generate-weekly-plan: user=%s period=%s objective=%s days=%s",
+        body.user_id, body.period, body.objective, body.available_days,
+    )
     try:
         result = await asyncio.to_thread(
             generate_weekly_plan,
@@ -81,8 +89,10 @@ async def generate_weekly_plan_endpoint(body: WeeklyPlanRequest):
             body.target_event_date,
             body.user_notes,
         )
+        logger.info("generate-weekly-plan: OK sessions=%d", len(result.get("sessions", [])))
         return result
     except Exception as e:
+        logger.error("generate-weekly-plan ERROR:\n%s", traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 
