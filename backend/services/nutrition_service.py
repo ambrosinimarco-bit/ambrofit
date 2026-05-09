@@ -51,48 +51,8 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
     fiber = sum(m.get("fiber_g", 0) for m in meal_list)
     activities_calories = sum(a.get("calories", 0) or 0 for a in activity_list)
 
-    # BMR (Mifflin-St Jeor) — richiede peso, altezza, età dal profilo
-    weight = health_data.get("weight_kg") or user_data.get("weight_kg")
-    height = user_data.get("height_cm")
-    age = user_data.get("age")
-    bmr = calculate_bmr(weight, height, age) if (weight and height and age) else None
-
-    # Calorie bruciate: usa iPhone Fitness se disponibile, altrimenti BMR + attività
-    total_calories_iphone = health_data.get("total_calories_iphone")
-    if total_calories_iphone:
-        calories_out = total_calories_iphone
-    elif bmr:
-        calories_out = bmr + activities_calories
-    else:
-        calories_out = activities_calories
-
-    calorie_goal = user_data.get("daily_calorie_goal", 2400)
-
-    # Dynamic macro targets when we have reliable calories_out and body weight
-    _has_reliable_cal = bool(total_calories_iphone or bmr)
-    _weight_for_macros = weight  # already resolved: today's health entry or profile fallback
-    if _has_reliable_cal and _weight_for_macros:
-        protein_goal, carbs_goal, fat_goal = calc_dynamic_macros(calories_out, float(_weight_for_macros))
-        macro_targets_dynamic = True
-        logger.info(
-            "macro targets DYNAMIC | cal_iphone=%s bmr=%s cal_out=%.0f weight=%.1f "
-            "→ P=%dg C=%dg F=%dg",
-            total_calories_iphone, bmr, calories_out, _weight_for_macros,
-            protein_goal, carbs_goal, fat_goal,
-        )
-    else:
-        protein_goal = user_data.get("protein_goal_g", 150)
-        carbs_goal = user_data.get("carbs_goal_g", 280)
-        fat_goal = user_data.get("fat_goal_g", 75)
-        macro_targets_dynamic = False
-        logger.warning(
-            "macro targets STATIC (fallback) | cal_iphone=%s bmr=%s weight=%s "
-            "→ has_reliable_cal=%s weight_ok=%s",
-            total_calories_iphone, bmr, _weight_for_macros,
-            _has_reliable_cal, bool(_weight_for_macros),
-        )
-
-    # Weight: use today's entry; fall back to latest available measurement
+    # ── Weight resolution (used by both BMR and macro targets) ──────────────
+    # 1. today's daily_health  2. latest daily_health with a value  3. user_profiles
     weight_kg = health_data.get("weight_kg")
     if weight_kg is None:
         latest = db.table("daily_health")\
@@ -103,6 +63,48 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
             .limit(1)\
             .execute()
         weight_kg = (latest.data or [{}])[0].get("weight_kg")
+    if weight_kg is None:
+        weight_kg = user_data.get("weight_kg")
+
+    # ── BMR ─────────────────────────────────────────────────────────────────
+    height = user_data.get("height_cm")
+    age = user_data.get("age")
+    bmr = calculate_bmr(float(weight_kg), height, age) if (weight_kg and height and age) else None
+    logger.debug("BMR inputs: weight_kg=%s height_cm=%s age=%s → bmr=%s", weight_kg, height, age, bmr)
+
+    # ── Calorie bruciate ─────────────────────────────────────────────────────
+    total_calories_iphone = health_data.get("total_calories_iphone")
+    if total_calories_iphone:
+        calories_out = total_calories_iphone
+    elif bmr:
+        calories_out = bmr + activities_calories
+    else:
+        calories_out = activities_calories
+
+    calorie_goal = user_data.get("daily_calorie_goal", 2400)
+
+    # ── Macro targets ────────────────────────────────────────────────────────
+    _has_reliable_cal = bool(total_calories_iphone or bmr)
+    if _has_reliable_cal and weight_kg:
+        protein_goal, carbs_goal, fat_goal = calc_dynamic_macros(calories_out, float(weight_kg))
+        macro_targets_dynamic = True
+        logger.info(
+            "macro targets DYNAMIC | cal_iphone=%s bmr=%s cal_out=%.0f weight=%.1f "
+            "→ P=%dg C=%dg F=%dg",
+            total_calories_iphone, bmr, calories_out, weight_kg,
+            protein_goal, carbs_goal, fat_goal,
+        )
+    else:
+        protein_goal = user_data.get("protein_goal_g", 150)
+        carbs_goal = user_data.get("carbs_goal_g", 280)
+        fat_goal = user_data.get("fat_goal_g", 75)
+        macro_targets_dynamic = False
+        logger.warning(
+            "macro targets STATIC (fallback) | cal_iphone=%s bmr=%s weight_kg=%s "
+            "→ has_reliable_cal=%s weight_ok=%s",
+            total_calories_iphone, bmr, weight_kg,
+            _has_reliable_cal, bool(weight_kg),
+        )
 
     return {
         "date": date_str,
