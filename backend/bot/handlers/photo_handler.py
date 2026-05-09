@@ -3,8 +3,9 @@ import logging
 import re
 from datetime import date, timedelta
 
-print("photo_handler v3 loaded (job_queue buffer)", flush=True)
+print("photo_handler v4 loaded (immediate, no buffer)", flush=True)
 logger = logging.getLogger(__name__)
+
 from telegram import Update
 from telegram.ext import ContextTypes
 from backend.services.claude_service import (
@@ -23,13 +24,8 @@ _GARMIN_KEYWORDS = {
 }
 _LABEL_KEYWORDS = {"etichetta", "label", "ingredienti", "valori nutrizionali"}
 
-# Buffer: user_id -> {images: [bytes], update: Update, context: ctx, task: Task}
-_pending_garmin: dict[str, dict] = {}
-_BUFFER_SECONDS = 10
-
 
 def _detect_photo_type_from_caption(caption: str) -> str | None:
-    """Returns 'garmin'/'label'/'food' if caption has clear signal, else None."""
     if not caption:
         return None
     c = caption.lower()
@@ -57,107 +53,38 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     photo_file = await photo.get_file()
     image_bytes = bytes(await photo_file.download_as_bytearray())
 
-    # Two-stage classification: keyword → Claude Haiku visual fallback
     photo_type = _detect_photo_type_from_caption(caption)
     if photo_type is None:
         await update.message.reply_text("📸 Sto analizzando la foto...")
         photo_type = await asyncio.to_thread(classify_photo_type, image_bytes)
 
-    if photo_type == "garmin":
-        await _buffer_garmin_photo(update, context, user_id, image_bytes)
-        return
-
-    # Food / label: process immediately
-    await update.message.reply_text("📸 Sto analizzando la foto...")
     db = get_supabase()
     try:
-        if photo_type == "label":
+        if photo_type == "garmin":
+            await update.message.reply_text("📸 Analizzo lo screenshot Garmin...")
+            result = await asyncio.to_thread(analyze_garmin_screenshots_batch, [image_bytes])
+            logger.info("garmin: analyzed for user=%s screen_type=%s", user_id, result.get("screen_type"))
+            activity_id = _save_garmin_data(db, user_id, result)
+            await update.message.reply_text(_format_garmin_reply(result, db, user_id), parse_mode="Markdown")
+            if result.get("avg_power_w") or result.get("duration_min"):
+                await _send_activity_report(update, db, user_id, result, activity_id)
+
+        elif photo_type == "label":
+            await update.message.reply_text("📸 Sto analizzando la foto...")
             quantity = _extract_quantity(caption)
             result = await asyncio.to_thread(analyze_nutrition_label, image_bytes, quantity)
             _save_label_meal(db, user_id, result, quantity)
             await update.message.reply_text(_format_label_reply(result, quantity), parse_mode="Markdown")
+
         else:
+            await update.message.reply_text("📸 Sto analizzando la foto...")
             result = await asyncio.to_thread(analyze_food_photo, image_bytes, caption)
             _save_food_meal(db, user_id, result)
             await update.message.reply_text(_format_food_reply(result), parse_mode="Markdown")
+
     except Exception as e:
+        logger.exception("handle_photo error for user=%s: %s", user_id, e)
         await update.message.reply_text(f"Errore nell'analisi della foto: {e}")
-
-
-async def _buffer_garmin_photo(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    user_id: str,
-    image_bytes: bytes,
-) -> None:
-    """Add image to user's pending batch, reset the 10s PTB job-queue flush timer."""
-    job_name = f"garmin_flush_{user_id}"
-
-    if user_id in _pending_garmin:
-        _pending_garmin[user_id]["images"].append(image_bytes)
-        _pending_garmin[user_id]["update"] = update
-        n = len(_pending_garmin[user_id]["images"])
-        logger.info("garmin_buffer: user=%s screenshot=%d added to batch", user_id, n)
-        await update.message.reply_text(
-            f"📸 Screenshot {n} aggiunto al batch. Aspetto altri {_BUFFER_SECONDS}s..."
-        )
-    else:
-        _pending_garmin[user_id] = {"images": [image_bytes], "update": update}
-        logger.info("garmin_buffer: user=%s new batch started (1 screenshot)", user_id)
-        await update.message.reply_text(
-            f"📸 Screenshot Garmin ricevuto. Aspetto altri screenshot per {_BUFFER_SECONDS}s prima di elaborare..."
-        )
-
-    # Cancel any existing scheduled flush for this user, then reschedule
-    for job in context.application.job_queue.get_jobs_by_name(job_name):
-        job.schedule_removal()
-        logger.info("garmin_buffer: cancelled previous flush job for user=%s", user_id)
-
-    context.application.job_queue.run_once(
-        _flush_garmin_job,
-        when=_BUFFER_SECONDS,
-        data=user_id,
-        name=job_name,
-    )
-    logger.info("garmin_buffer: flush job scheduled in %ds for user=%s", _BUFFER_SECONDS, user_id)
-
-
-async def _flush_garmin_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """PTB job_queue callback — fires after buffer window expires."""
-    user_id: str = context.job.data
-    logger.info("garmin_flush_job: timer fired for user=%s", user_id)
-    await _flush_garmin_batch(user_id)
-
-
-async def _flush_garmin_batch(user_id: str) -> None:
-    """Analyze all buffered images in one Claude call, save, send report."""
-    logger.info("garmin_flush_batch: starting for user=%s", user_id)
-    batch = _pending_garmin.pop(user_id, None)
-    if not batch:
-        logger.warning("garmin_flush_batch: no pending batch for user=%s (already flushed?)", user_id)
-        return
-
-    update: Update = batch["update"]
-    images: list[bytes] = batch["images"]
-    n = len(images)
-    logger.info("garmin_flush_batch: processing %d image(s) for user=%s", n, user_id)
-
-    await update.message.reply_text(
-        f"🔄 Elaboro {n} screenshot Garmin {'insieme' if n > 1 else ''}..."
-    )
-
-    db = get_supabase()
-    try:
-        result = await asyncio.to_thread(analyze_garmin_screenshots_batch, images)
-        activity_id = _save_garmin_data(db, user_id, result)
-        await update.message.reply_text(_format_garmin_reply(result, db, user_id), parse_mode="Markdown")
-
-        if result.get("avg_power_w") or result.get("duration_min"):
-            await _send_activity_report(update, db, user_id, result, activity_id)
-
-    except Exception as e:
-        logger.exception("garmin_flush_batch: error for user=%s: %s", user_id, e)
-        await update.message.reply_text(f"Errore nell'analisi degli screenshot: {e}")
 
 
 def _save_food_meal(db, user_id: str, result: dict):
@@ -194,10 +121,11 @@ def _save_label_meal(db, user_id: str, result: dict, quantity: float):
 
 
 def _save_garmin_data(db, user_id: str, result: dict) -> str | None:
-    """Save garmin data to daily_health and/or activities. Returns activity_id if created."""
+    """Upsert garmin data: UPDATE today's existing garmin activity, INSERT if none."""
     target_date = result.get("date") or date.today().isoformat()
     screen_type = result.get("screen_type", "health")
 
+    # daily_health: upsert
     has_health_data = any(result.get(k) for k in [
         "body_battery_end", "body_battery_start", "stress_score",
         "hrv_ms", "resting_hr", "sleep_hours", "steps",
@@ -222,19 +150,16 @@ def _save_garmin_data(db, user_id: str, result: dict) -> str | None:
         else:
             db.table("daily_health").insert(health_data).execute()
 
+    # activity: UPDATE if today's garmin_screenshot exists, else INSERT
     has_activity_data = any(result.get(k) for k in [
         "avg_power_w", "normalized_power_w", "avg_hr_bpm", "duration_min",
     ])
     activity_id: str | None = None
     if screen_type in ("activity", "mixed") or has_activity_data:
-        activity_name = result.get("activity_name") or "Attività Garmin"
-        duration = result.get("duration_min") or 0
-        res = db.table("activities").insert({
-            "user_id": user_id,
-            "activity_date": target_date,
+        activity_data = {k: v for k, v in {
             "activity_type": "ride",
-            "name": activity_name,
-            "duration_min": float(duration),
+            "name": result.get("activity_name") or "Attività Garmin",
+            "duration_min": float(result.get("duration_min") or 0) or None,
             "distance_km": result.get("distance_km"),
             "elevation_m": result.get("elevation_m"),
             "avg_heart_rate": result.get("avg_hr_bpm"),
@@ -243,10 +168,26 @@ def _save_garmin_data(db, user_id: str, result: dict) -> str | None:
             "normalized_power_w": result.get("normalized_power_w"),
             "avg_cadence_rpm": result.get("avg_cadence_rpm"),
             "tss": result.get("tss"),
-            "source": "garmin_screenshot",
-        }).execute()
-        if res.data:
-            activity_id = res.data[0]["id"]
+        }.items() if v is not None}
+
+        existing = db.table("activities").select("id")\
+            .eq("user_id", user_id).eq("activity_date", target_date)\
+            .eq("source", "garmin_screenshot").limit(1).execute()
+
+        if existing.data:
+            activity_id = existing.data[0]["id"]
+            db.table("activities").update(activity_data).eq("id", activity_id).execute()
+            logger.info("garmin: updated activity_id=%s for user=%s", activity_id, user_id)
+        else:
+            res = db.table("activities").insert({
+                "user_id": user_id,
+                "activity_date": target_date,
+                "source": "garmin_screenshot",
+                **activity_data,
+            }).execute()
+            if res.data:
+                activity_id = res.data[0]["id"]
+                logger.info("garmin: inserted activity_id=%s for user=%s", activity_id, user_id)
 
     return activity_id
 
@@ -258,7 +199,6 @@ async def _send_activity_report(
     garmin_data: dict,
     activity_id: str | None,
 ) -> None:
-    """Generate coaching report, send via Telegram, save to activity notes."""
     try:
         profile_res = db.table("user_profiles").select(
             "ftp_watts,weight_kg,coaching_notes"
@@ -274,14 +214,9 @@ async def _send_activity_report(
         recent_acts = recent_res.data or []
 
         await update.message.reply_text("🔄 Sto elaborando il report di performance...")
-
-        report = await asyncio.to_thread(
-            generate_activity_report, garmin_data, recent_acts, profile, ftp
-        )
-
+        report = await asyncio.to_thread(generate_activity_report, garmin_data, recent_acts, profile, ftp)
         await update.message.reply_text(report, parse_mode="Markdown")
 
-        # Prefer the just-created activity_id; fall back to today's latest activity
         target_id = activity_id
         if not target_id:
             today = date.today().isoformat()
@@ -302,6 +237,7 @@ async def _send_activity_report(
             logger.warning("coaching_notes NOT saved: no activity found for user=%s today", user_id)
 
     except Exception as e:
+        logger.exception("_send_activity_report error for user=%s: %s", user_id, e)
         await update.message.reply_text(f"⚠️ Report non generato: {e}")
 
 
@@ -309,18 +245,15 @@ def _get_coaching_comment(result: dict, profile: dict) -> str:
     avg_power = result.get("avg_power_w")
     if not avg_power:
         return ""
-
     ftp = profile.get("ftp_watts") or 0
     z2_max = profile.get("power_zone_2_max") or 162
     ftp_val = ftp if ftp else 200
-
     if avg_power < z2_max:
         comment = f"Buona sessione Z2 ({avg_power}W media) — ottimo per costruire la base aerobica."
     elif avg_power >= ftp_val:
         comment = f"Sessione intensa ad alta intensità ({avg_power}W media, vicino o sopra FTP) — monitora il recupero."
     else:
         comment = f"Sessione a intensità moderata ({avg_power}W media) — zona di sviluppo."
-
     if result.get("avg_cadence_rpm"):
         cad = result["avg_cadence_rpm"]
         cad_min = profile.get("target_cadence_min") or 85
@@ -331,7 +264,6 @@ def _get_coaching_comment(result: dict, profile: dict) -> str:
             comment += f" Cadenza {cad}rpm alta — ottimo se era pianificato."
         else:
             comment += f" Cadenza {cad}rpm nel target."
-
     return comment
 
 
