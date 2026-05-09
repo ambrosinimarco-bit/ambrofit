@@ -265,48 +265,116 @@ const ACTIVITY_ICONS = { run:'🏃', ride:'🚴', swim:'🏊', walk:'🚶', hike
 function activityItemHtml(a) {
   const icon = ACTIVITY_ICONS[a.activity_type] || '⚡';
   const stats = [
-    a.duration_min && `⏱ ${a.duration_min}min`,
-    a.distance_km && `📍 ${a.distance_km}km`,
-    a.elevation_m && `⛰ ${a.elevation_m}m`,
+    a.duration_min   && `⏱ ${a.duration_min}min`,
+    a.distance_km    && `📍 ${a.distance_km}km`,
+    a.elevation_m    && `⛰ ${a.elevation_m}m`,
     a.avg_heart_rate && `❤️ ${a.avg_heart_rate}bpm`,
-    a.rpe && `RPE ${a.rpe}/10`,
+    a.rpe            && `RPE ${a.rpe}/10`,
   ].filter(Boolean);
 
-  const conditionPills = [
-    a.sleep_hours   && `💤 ${a.sleep_hours}h sonno`,
-    a.stress_level  && `😤 stress ${a.stress_level}/10`,
-  ].filter(Boolean);
-
-  const conditionRows = [
-    a.condition_pre    && `<div class="condition-row"><span class="condition-label">Prima:</span> <span>${esc(a.condition_pre)}</span></div>`,
-    a.condition_during && `<div class="condition-row"><span class="condition-label">Durante:</span> <span>${esc(a.condition_during)}</span></div>`,
-    a.condition_post   && `<div class="condition-row"><span class="condition-label">Dopo:</span> <span>${esc(a.condition_post)}</span></div>`,
-    a.physical_notes   && `<div class="condition-row" style="color:var(--danger)"><span class="condition-label">⚠ Fisico:</span> <span>${esc(a.physical_notes)}</span></div>`,
-  ].filter(Boolean);
-
-  const hasCondition = conditionPills.length || conditionRows.length;
+  const hasCondition = a.condition_pre || a.condition_during || a.condition_post ||
+                       a.sleep_hours || a.stress_level || a.physical_notes;
 
   return `
-    <div class="activity-item">
+    <div class="activity-item activity-item-clickable" onclick="openActivityDetail('${a.id}')">
       <span class="activity-type-icon">${icon}</span>
-      <div class="activity-info" style="flex:1;min-width:0">
+      <div class="activity-info">
         <div class="activity-name">${esc(a.name)}</div>
-        <div class="activity-meta">${a.activity_date} · ${a.source || 'manual'}</div>
-        ${hasCondition ? `
-        <div class="activity-condition">
-          ${conditionPills.map(p => `<span class="condition-pill">${p}</span>`).join('')}
-          ${conditionRows.join('')}
-        </div>` : ''}
+        <div class="activity-meta">${a.activity_date} · ${a.source || 'manual'}${hasCondition ? ' · 📋 check-in' : ''}</div>
       </div>
       <div class="activity-stats">
         ${stats.map(s => `<span class="stat-pill">${s}</span>`).join('')}
       </div>
-      <div style="display:flex;gap:.3rem;margin-left:.5rem">
+      <div style="display:flex;gap:.3rem;margin-left:.5rem" onclick="event.stopPropagation()">
         <button class="meal-delete" onclick="openEditActivityModal('${a.id}')" title="Modifica">✏️</button>
         <button class="meal-delete" onclick="deleteActivity('${a.id}')" title="Elimina">🗑</button>
       </div>
     </div>
   `;
+}
+
+function openActivityDetail(id) {
+  const a = activitiesCache[id];
+  if (!a) return;
+
+  const icon = ACTIVITY_ICONS[a.activity_type] || '⚡';
+  const sourceLabel = { strava: '🟠 Strava', garmin_screenshot: '⌚ Garmin', telegram_text: '💬 Telegram', telegram_photo: '📷 Telegram foto', telegram_voice: '🎤 Telegram voce', manual: '✏️ Manuale' }[a.source] || a.source || 'Manuale';
+
+  document.getElementById('actDetailTitle').textContent = `${icon} ${a.name}`;
+  document.getElementById('actDetailMeta').textContent = `${a.activity_date} · ${a.activity_type} · ${sourceLabel}`;
+
+  // Sezione metriche
+  const metrics = [
+    { label: 'Durata',       val: a.duration_min    && `${a.duration_min} min`,    icon: '⏱' },
+    { label: 'Distanza',     val: a.distance_km     && `${a.distance_km} km`,      icon: '📍' },
+    { label: 'Dislivello',   val: a.elevation_m     && `+${a.elevation_m} m`,      icon: '⛰' },
+    { label: 'Calorie',      val: a.calories        && `${a.calories} kcal`,       icon: '🔥' },
+    { label: 'FC media',     val: a.avg_heart_rate  && `${a.avg_heart_rate} bpm`,  icon: '❤️' },
+    { label: 'FC max',       val: a.max_heart_rate  && `${a.max_heart_rate} bpm`,  icon: '💓' },
+    { label: 'Cadenza media',val: a.avg_cadence_rpm && `${a.avg_cadence_rpm} rpm`, icon: '🔄' },
+    { label: 'Potenza media',val: a.avg_power_w     && `${a.avg_power_w} W`,       icon: '⚡' },
+    { label: 'NP',           val: a.normalized_power_w && `${a.normalized_power_w} W`, icon: '📊' },
+    { label: 'TSS',          val: a.tss             && `${a.tss}`,                 icon: '📈' },
+  ].filter(m => m.val);
+
+  const metricsHtml = metrics.length ? `
+    <div class="detail-section">
+      <div class="detail-section-title">Metriche</div>
+      <div class="detail-metrics-grid">
+        ${metrics.map(m => `
+          <div class="detail-metric">
+            <div class="detail-metric-icon">${m.icon}</div>
+            <div class="detail-metric-val">${m.val}</div>
+            <div class="detail-metric-label">${m.label}</div>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+
+  // RPE bar
+  const rpeHtml = a.rpe ? `
+    <div class="detail-section">
+      <div class="detail-section-title">Sforzo percepito (RPE)</div>
+      <div class="rpe-row">
+        <div class="rpe-bar-wrap"><div class="rpe-bar-fill" style="width:${a.rpe * 10}%;background:${a.rpe <= 5 ? 'var(--success)' : a.rpe <= 7 ? 'var(--accent)' : 'var(--danger)'}"></div></div>
+        <span class="rpe-value">${a.rpe}/10</span>
+      </div>
+    </div>` : '';
+
+  // Condizione
+  const condRows = [
+    a.sleep_hours    && `<div class="detail-cond-row"><span>💤 Sonno notte prima</span><strong>${a.sleep_hours}h</strong></div>`,
+    a.stress_level   && `<div class="detail-cond-row"><span>😤 Livello stress</span><strong>${a.stress_level}/10</strong></div>`,
+    a.condition_pre  && `<div class="detail-cond-row"><span>Prima</span><span>${esc(a.condition_pre)}</span></div>`,
+    a.condition_during&&`<div class="detail-cond-row"><span>Durante</span><span>${esc(a.condition_during)}</span></div>`,
+    a.condition_post && `<div class="detail-cond-row"><span>Dopo</span><span>${esc(a.condition_post)}</span></div>`,
+  ].filter(Boolean);
+
+  const conditionHtml = condRows.length ? `
+    <div class="detail-section">
+      <div class="detail-section-title">Condizione</div>
+      <div class="detail-cond-list">${condRows.join('')}</div>
+    </div>` : '';
+
+  // Note fisiche
+  const physicalHtml = a.physical_notes ? `
+    <div class="detail-section">
+      <div class="detail-section-title" style="color:var(--danger)">⚠ Note fisiche</div>
+      <div class="detail-note danger-note">${esc(a.physical_notes)}</div>
+    </div>` : '';
+
+  // Note generali
+  const notesHtml = a.notes ? `
+    <div class="detail-section">
+      <div class="detail-section-title">Note</div>
+      <div class="detail-note">${esc(a.notes)}</div>
+    </div>` : '';
+
+  document.getElementById('actDetailBody').innerHTML = metricsHtml + rpeHtml + conditionHtml + physicalHtml + notesHtml || '<p style="color:var(--text2)">Nessun dato aggiuntivo disponibile.</p>';
+
+  document.getElementById('actDetailEditBtn').onclick = () => { closeModal(); openEditActivityModal(id); };
+  document.getElementById('actDetailDeleteBtn').onclick = () => { closeModal(); deleteActivity(id); };
+
+  openModal('modalActivityDetail');
 }
 
 async function deleteActivity(id) {

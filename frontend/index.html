@@ -584,6 +584,24 @@
     </div>
   </div>
 
+  <!-- Activity Detail Modal -->
+  <div class="modal modal-wide" id="modalActivityDetail">
+    <div class="modal-header">
+      <div>
+        <h3 id="actDetailTitle">Dettaglio attività</h3>
+        <div id="actDetailMeta" style="font-size:.8rem;color:var(--text2);margin-top:.15rem"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body" id="actDetailBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-danger-outline" id="actDetailDeleteBtn">Elimina</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-outline" onclick="closeModal()">Chiudi</button>
+      <button class="btn btn-primary" id="actDetailEditBtn">✏️ Modifica</button>
+    </div>
+  </div>
+
   <script src="/static/js/api.js"></script>
   <script src="/static/js/charts.js"></script>
   <script src="/static/js/app.js"></script>
