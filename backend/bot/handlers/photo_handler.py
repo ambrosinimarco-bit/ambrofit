@@ -151,6 +151,10 @@ def _save_garmin_data(db, user_id: str, result: dict):
             "elevation_m": result.get("elevation_m"),
             "avg_heart_rate": result.get("avg_hr_bpm"),
             "max_heart_rate": result.get("max_hr_bpm"),
+            "avg_power_w": result.get("avg_power_w"),
+            "normalized_power_w": result.get("normalized_power_w"),
+            "avg_cadence_rpm": result.get("avg_cadence_rpm"),
+            "tss": result.get("tss"),
             "source": "garmin_screenshot",
             "notes": result.get("raw_text", "")[:500],
         }).execute()

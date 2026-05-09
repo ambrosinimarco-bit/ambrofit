@@ -95,6 +95,15 @@ def _map_activity(act: dict, user_id: str) -> dict:
     def _to_int(val):
         return int(round(val)) if val is not None else None
 
+    def _to_float(val):
+        return round(float(val), 1) if val is not None else None
+
+    # average_watts and average_cadence are present in SummaryActivity (list endpoint).
+    # weighted_average_watts (NP) is only in DetailedActivity — pre-fetched when device_watts=True.
+    avg_power      = _to_int(act.get("average_watts"))
+    np_power       = _to_int(act.get("weighted_average_watts"))
+    avg_cadence    = _to_float(act.get("average_cadence"))
+
     return {
         "user_id": user_id,
         "activity_date": start_dt.date().isoformat(),
@@ -106,28 +115,56 @@ def _map_activity(act: dict, user_id: str) -> dict:
         "calories": act.get("calories") or None,
         "avg_heart_rate": _to_int(act.get("average_heartrate")),
         "max_heart_rate": _to_int(act.get("max_heartrate")),
+        "avg_power_w": avg_power,
+        "normalized_power_w": np_power,
+        "avg_cadence_rpm": avg_cadence,
         "strava_id": str(act["id"]),
         "source": "strava",
     }
 
 
 async def sync_recent_activities(user_id: str, days: int = 30) -> list[dict]:
-    """Sincronizza le attività recenti da Strava."""
+    """Sincronizza le attività recenti da Strava.
+
+    Per le ride con power meter (device_watts=True) esegue una seconda
+    chiamata al detail endpoint per recuperare weighted_average_watts (NP),
+    che non è disponibile nell'endpoint lista.
+    """
     token = await get_valid_token(user_id)
     if not token:
         return []
 
     db = get_supabase()
     after_ts = int((datetime.now(timezone.utc).timestamp()) - days * 86400)
+    headers = {"Authorization": f"Bearer {token}"}
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(
             f"{STRAVA_API_BASE}/athlete/activities",
-            headers={"Authorization": f"Bearer {token}"},
+            headers=headers,
             params={"after": after_ts, "per_page": 100},
         )
         resp.raise_for_status()
         activities = resp.json()
+
+        # Fetch detail endpoint for power-meter rides to get NP (weighted_average_watts).
+        # average_watts and average_cadence are already in the list response.
+        for act in activities:
+            sport = act.get("sport_type", act.get("type", ""))
+            is_power_ride = (
+                act.get("device_watts")
+                and SPORT_TYPE_MAP.get(sport, "other") == "ride"
+            )
+            if is_power_ride:
+                try:
+                    det = await client.get(
+                        f"{STRAVA_API_BASE}/activities/{act['id']}",
+                        headers=headers,
+                    )
+                    if det.status_code == 200:
+                        act["weighted_average_watts"] = det.json().get("weighted_average_watts")
+                except Exception:
+                    pass
 
     imported = []
     for act in activities:

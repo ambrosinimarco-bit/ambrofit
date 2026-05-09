@@ -68,6 +68,10 @@ class ActivityCreate(BaseModel):
     condition_post: Optional[str] = None
     sleep_hours: Optional[float] = None
     stress_level: Optional[int] = None
+    avg_power_w: Optional[int] = None
+    normalized_power_w: Optional[int] = None
+    avg_cadence_rpm: Optional[float] = None
+    tss: Optional[float] = None
 
 
 class ActivityOut(ActivityCreate):
