@@ -210,6 +210,21 @@
         <div class="meal-groups" id="mealGroups"></div>
 
         <button class="btn btn-primary btn-block" onclick="openAddMealModal()">+ Aggiungi pasto</button>
+
+        <!-- I miei alimenti -->
+        <div class="card" style="margin-top:1rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;padding:.1rem 0" onclick="toggleFoodDB()">
+            <h3 style="margin:0;font-size:1rem">🗂 I miei alimenti</h3>
+            <span id="foodDBToggleIcon" style="color:var(--text2);font-size:.85rem">▼</span>
+          </div>
+          <div id="foodDBSection" style="display:none;margin-top:.75rem">
+            <input type="text" id="foodSearchInput" placeholder="🔍 Cerca alimento..."
+                   class="form-input" oninput="searchFoodItems()"
+                   style="width:100%;box-sizing:border-box;margin-bottom:.75rem">
+            <div id="foodItemsList"><p style="color:var(--text2);font-size:.85rem">Caricamento...</p></div>
+          </div>
+        </div>
+
         <button class="btn-coach" onclick="openCoachWithMessage('Analizza la mia nutrizione di oggi: sono nei target di calorie, proteine, carboidrati e grassi? Cosa miglioreresti?')">💬 Chiedi al coach</button>
       </section>
 
@@ -739,6 +754,36 @@
     </div>
   </div>
 
+
+  <!-- Food add-to-meal modal -->
+  <div class="modal" id="modalFoodAdd">
+    <div class="modal-header">
+      <h3>Aggiungi al pasto</h3>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="foodAddName" style="font-weight:600;font-size:1rem;margin-bottom:.25rem"></div>
+      <div id="foodAddPer100" style="color:var(--text2);font-size:.8rem;margin-bottom:1rem"></div>
+      <div class="form-group">
+        <label>Pasto</label>
+        <select id="foodAddMealTime">
+          <option value="breakfast">Colazione</option>
+          <option value="lunch">Pranzo</option>
+          <option value="dinner">Cena</option>
+          <option value="snack">Spuntino</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Quantità (g) *</label>
+        <input type="number" id="foodAddQuantity" placeholder="es. 150" oninput="updateFoodAddPreview()" />
+      </div>
+      <div id="foodAddPreview" style="margin-top:.5rem;color:var(--text2);font-size:.82rem;min-height:1.2em"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
+      <button class="btn btn-primary" id="foodAddSaveBtn" onclick="saveFoodToPasto()">Aggiungi</button>
+    </div>
+  </div>
 
   <script src="/static/js/api.js"></script>
   <script src="/static/js/charts.js"></script>

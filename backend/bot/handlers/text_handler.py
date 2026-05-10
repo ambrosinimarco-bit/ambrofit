@@ -172,35 +172,78 @@ async def dispatch_message(
 
         else:
             # Pasto (meal o general) — analisi nutrizionale dettagliata
+            from backend.services.food_service import lookup_food_item, calculate_for_quantity, upsert_food_item
             result = analyze_food_text(text)
-            # Explicit user indication takes priority over Claude's guess
             meal_time = _extract_meal_time(text) or result.get("meal_time") or "snack"
+            meal_name = result.get("meal_name", text[:50])
+            items = result.get("items", [])
+
+            # Enhance each item with personal food database values when available
+            db_hits: list[str] = []
+            for item in items:
+                item_name = item.get("name", "")
+                qty = float(item.get("quantity_g") or 0)
+                if not item_name or qty <= 0:
+                    continue
+                fi = lookup_food_item(db, user_id, item_name)
+                if fi:
+                    vals = calculate_for_quantity(fi, qty)
+                    item.update(vals)
+                    db_hits.append(fi["name"])
+
+            if db_hits:
+                total_cal   = sum(i.get("calories", 0) for i in items)
+                total_prot  = sum(i.get("protein_g", 0) for i in items)
+                total_carbs = sum(i.get("carbs_g", 0) for i in items)
+                total_fat   = sum(i.get("fat_g", 0) for i in items)
+                total_fiber = sum(i.get("fiber_g", 0) for i in items)
+            else:
+                total_cal   = result.get("total_calories", 0)
+                total_prot  = result.get("total_protein_g", 0)
+                total_carbs = result.get("total_carbs_g", 0)
+                total_fat   = result.get("total_fat_g", 0)
+                total_fiber = result.get("total_fiber_g", 0)
+
             db.table("meals").insert({
-                "user_id": user_id,
+                "user_id":   user_id,
                 "meal_date": date.today().isoformat(),
                 "meal_time": meal_time,
-                "name": result.get("meal_name", text[:50]),
-                "calories": result.get("total_calories", 0),
-                "protein_g": result.get("total_protein_g", 0),
-                "carbs_g": result.get("total_carbs_g", 0),
-                "fat_g": result.get("total_fat_g", 0),
-                "fiber_g": result.get("total_fiber_g", 0),
-                "notes": text,
-                "source": source,
+                "name":      meal_name,
+                "calories":  total_cal,
+                "protein_g": total_prot,
+                "carbs_g":   total_carbs,
+                "fat_g":     total_fat,
+                "fiber_g":   total_fiber,
+                "notes":     text,
+                "source":    source,
             }).execute()
 
+            # Auto-save single-item meals to personal food database
+            if len(items) == 1 and not db_hits:
+                item = items[0]
+                qty = float(item.get("quantity_g") or 0)
+                if qty > 0 and item.get("calories"):
+                    upsert_food_item(
+                        db, user_id, item.get("name", meal_name), source,
+                        calories_per_100g=item["calories"] * 100 / qty,
+                        protein_per_100g=(item.get("protein_g") or 0) * 100 / qty or None,
+                        carbs_per_100g=(item.get("carbs_g") or 0) * 100 / qty or None,
+                        fat_per_100g=(item.get("fat_g") or 0) * 100 / qty or None,
+                        fiber_per_100g=(item.get("fiber_g") or 0) * 100 / qty or None,
+                    )
+
             confidence_emoji = {"high": "✅", "medium": "⚠️", "low": "❓"}.get(result.get("confidence", "medium"), "⚠️")
-            items_text = "\n".join(
-                f"  • {i['name']}: {i['calories']} kcal" for i in result.get("items", [])
-            )
+            items_text = "\n".join(f"  • {i['name']}: {i.get('calories', 0)} kcal" for i in items)
+            db_note = f"\n_📂 Valori da database personale: {', '.join(db_hits)}_" if db_hits else ""
             reply = (
-                f"{confidence_emoji} *{result.get('meal_name', 'Pasto registrato')}*\n\n"
+                f"{confidence_emoji} *{meal_name}*\n\n"
                 f"{items_text}\n\n"
                 f"📊 *Totali:*\n"
-                f"🔥 Calorie: `{result.get('total_calories', 0)} kcal`\n"
-                f"💪 Proteine: `{result.get('total_protein_g', 0)}g`\n"
-                f"🌾 Carboidrati: `{result.get('total_carbs_g', 0)}g`\n"
-                f"🫒 Grassi: `{result.get('total_fat_g', 0)}g`\n"
+                f"🔥 Calorie: `{total_cal} kcal`\n"
+                f"💪 Proteine: `{total_prot}g`\n"
+                f"🌾 Carboidrati: `{total_carbs}g`\n"
+                f"🫒 Grassi: `{total_fat}g`\n"
+                f"{db_note}"
             )
             await update.message.reply_text(reply, parse_mode="Markdown")
 

@@ -1633,6 +1633,128 @@ function mdToHtml(text) {
     .replace(/\n/g, '<br>');
 }
 
+// ─── Food Database ────────────────────────────────────────────────
+let foodDBOpen = false;
+let foodDBCache = [];
+let selectedFoodItem = null;
+
+function toggleFoodDB() {
+  foodDBOpen = !foodDBOpen;
+  document.getElementById('foodDBSection').style.display = foodDBOpen ? '' : 'none';
+  document.getElementById('foodDBToggleIcon').textContent = foodDBOpen ? '▲' : '▼';
+  if (foodDBOpen) loadFoodDB();
+}
+
+async function loadFoodDB() {
+  const search = document.getElementById('foodSearchInput')?.value || '';
+  const items = await api.getFoods(USER_ID, search).catch(() => []);
+  foodDBCache = items;
+  renderFoodItems(items);
+}
+
+function renderFoodItems(items) {
+  const container = document.getElementById('foodItemsList');
+  if (!items.length) {
+    container.innerHTML = '<p style="color:var(--text2);font-size:.85rem">Nessun alimento salvato. Vengono aggiunti automaticamente quando inserisci pasti con nome + quantità.</p>';
+    return;
+  }
+  container.innerHTML = items.map(f => `
+    <div style="display:flex;align-items:center;gap:.5rem;padding:.5rem 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500;font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+          ${esc(f.name)}${f.brand ? ` <span style="color:var(--text2);font-weight:400">(${esc(f.brand)})</span>` : ''}
+        </div>
+        <div style="color:var(--text2);font-size:.76rem">
+          ${Math.round(f.calories_per_100g || 0)} kcal · P ${f.protein_per_100g || 0}g · C ${f.carbs_per_100g || 0}g · G ${f.fat_per_100g || 0}g / 100g
+        </div>
+      </div>
+      <button class="btn btn-sm btn-outline" onclick="openFoodAddModal('${f.id}')" style="white-space:nowrap">+ Pasto</button>
+      <button class="meal-delete" onclick="deleteFoodItem('${f.id}')" title="Elimina">🗑</button>
+    </div>
+  `).join('');
+}
+
+async function searchFoodItems() {
+  if (!foodDBOpen) return;
+  const query = document.getElementById('foodSearchInput')?.value || '';
+  const items = await api.getFoods(USER_ID, query).catch(() => []);
+  foodDBCache = items;
+  renderFoodItems(items);
+}
+
+function openFoodAddModal(foodId) {
+  const item = foodDBCache.find(f => f.id === foodId);
+  if (!item) return;
+  selectedFoodItem = item;
+
+  document.getElementById('foodAddName').textContent =
+    item.name + (item.brand ? ` (${item.brand})` : '');
+  document.getElementById('foodAddPer100').textContent =
+    `Per 100g: ${Math.round(item.calories_per_100g || 0)} kcal · ` +
+    `P ${item.protein_per_100g || 0}g · C ${item.carbs_per_100g || 0}g · G ${item.fat_per_100g || 0}g`;
+  document.getElementById('foodAddPreview').textContent = '';
+  setVal('foodAddMealTime', 'snack');
+  setVal('foodAddQuantity', '');
+
+  openModal('modalFoodAdd');
+  setTimeout(() => document.getElementById('foodAddQuantity')?.focus(), 100);
+}
+
+function updateFoodAddPreview() {
+  const qty = parseFloat(getVal('foodAddQuantity'));
+  const preview = document.getElementById('foodAddPreview');
+  if (!selectedFoodItem || !qty || qty <= 0) { if (preview) preview.textContent = ''; return; }
+  const f = selectedFoodItem;
+  const factor = qty / 100;
+  const cal   = Math.round((f.calories_per_100g  || 0) * factor * 10) / 10;
+  const prot  = Math.round((f.protein_per_100g   || 0) * factor * 10) / 10;
+  const carbs = Math.round((f.carbs_per_100g     || 0) * factor * 10) / 10;
+  const fat   = Math.round((f.fat_per_100g       || 0) * factor * 10) / 10;
+  if (preview) preview.textContent = `→ ${cal} kcal · P ${prot}g · C ${carbs}g · G ${fat}g`;
+}
+
+async function saveFoodToPasto() {
+  if (!selectedFoodItem) return;
+  const qty = parseFloat(getVal('foodAddQuantity'));
+  if (!qty || qty <= 0) { alert('Inserisci la quantità in grammi'); return; }
+
+  const f = selectedFoodItem;
+  const factor = qty / 100;
+  const data = {
+    user_id:   USER_ID,
+    meal_date: nutritionDate,
+    meal_time: getVal('foodAddMealTime') || 'snack',
+    name:      f.name,
+    calories:  Math.round((f.calories_per_100g  || 0) * factor * 10) / 10,
+    protein_g: Math.round((f.protein_per_100g   || 0) * factor * 10) / 10,
+    carbs_g:   Math.round((f.carbs_per_100g     || 0) * factor * 10) / 10,
+    fat_g:     Math.round((f.fat_per_100g       || 0) * factor * 10) / 10,
+    fiber_g:   Math.round((f.fiber_per_100g     || 0) * factor * 10) / 10,
+    quantity_g: qty,
+    source:    'manual',
+  };
+
+  const btn = document.getElementById('foodAddSaveBtn');
+  if (btn) btn.disabled = true;
+  try {
+    await api.addMeal(data);
+    selectedFoodItem = null;
+    closeModal();
+    loadNutrition();
+    loadOverview();
+  } catch (e) {
+    alert('Errore nel salvataggio: ' + e.message);
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function deleteFoodItem(id) {
+  if (!confirm('Eliminare questo alimento dal database personale?')) return;
+  await api.deleteFood(id);
+  foodDBCache = foodDBCache.filter(f => f.id !== id);
+  renderFoodItems(foodDBCache);
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────
 function setText(id, val) { const el = document.getElementById(id); if (el) el.textContent = val ?? '—'; }
 function setWidth(id, val) { const el = document.getElementById(id); if (el) el.style.width = val; }

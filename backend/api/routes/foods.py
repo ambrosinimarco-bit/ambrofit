@@ -1,0 +1,51 @@
+from fastapi import APIRouter
+from pydantic import BaseModel
+from backend.database.client import get_supabase
+
+router = APIRouter(prefix="/api/foods", tags=["foods"])
+
+
+class FoodItemCreate(BaseModel):
+    user_id: str
+    name: str
+    brand: str | None = None
+    calories_per_100g: float | None = None
+    protein_per_100g: float | None = None
+    carbs_per_100g: float | None = None
+    fat_per_100g: float | None = None
+    fiber_per_100g: float | None = None
+    source: str = "manual"
+
+
+@router.get("/")
+def list_foods(user_id: str, search: str = ""):
+    db = get_supabase()
+    q = db.table("food_items").select("*").eq("user_id", user_id)
+    if search:
+        q = q.ilike("name", f"%{search}%")
+    return q.order("name").execute().data or []
+
+
+@router.post("/")
+def create_food(item: FoodItemCreate):
+    from backend.services.food_service import upsert_food_item
+    db = get_supabase()
+    upsert_food_item(
+        db, item.user_id, item.name, item.source,
+        calories_per_100g=item.calories_per_100g,
+        protein_per_100g=item.protein_per_100g,
+        carbs_per_100g=item.carbs_per_100g,
+        fat_per_100g=item.fat_per_100g,
+        fiber_per_100g=item.fiber_per_100g,
+        brand=item.brand,
+    )
+    res = db.table("food_items").select("*") \
+        .eq("user_id", item.user_id).ilike("name", item.name).limit(1).execute()
+    return res.data[0] if res.data else {}
+
+
+@router.delete("/{food_id}")
+def delete_food(food_id: str):
+    db = get_supabase()
+    db.table("food_items").delete().eq("id", food_id).execute()
+    return {"ok": True}

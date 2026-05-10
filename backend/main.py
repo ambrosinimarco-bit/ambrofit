@@ -10,6 +10,7 @@ from backend.config import get_settings
 from backend.api.routes import meals, activities, health, strava, dashboard, training, webhook
 from backend.api.routes.exercises import router as exercises_router
 from backend.api.routes.chat import router as chat_router
+from backend.api.routes.foods import router as foods_router
 
 settings = get_settings()
 
@@ -75,6 +76,7 @@ app.include_router(training.router)
 app.include_router(webhook.router)
 app.include_router(exercises_router)
 app.include_router(chat_router)
+app.include_router(foods_router)
 
 frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
 if os.path.exists(frontend_path):

@@ -38,6 +38,20 @@ def create_meal(meal: MealCreate):
     result = db.table("meals").insert(meal.model_dump(mode="json")).execute()
     if not result.data:
         raise HTTPException(status_code=500, detail="Errore nel salvataggio")
+
+    # Auto-save to personal food database when quantity is known
+    if meal.quantity_g and meal.quantity_g > 0 and meal.calories:
+        from backend.services.food_service import upsert_food_item
+        qty = meal.quantity_g
+        upsert_food_item(
+            db, meal.user_id, meal.name, "manuale",
+            calories_per_100g=meal.calories * 100 / qty,
+            protein_per_100g=meal.protein_g * 100 / qty if meal.protein_g else None,
+            carbs_per_100g=meal.carbs_g * 100 / qty if meal.carbs_g else None,
+            fat_per_100g=meal.fat_g * 100 / qty if meal.fat_g else None,
+            fiber_per_100g=meal.fiber_g * 100 / qty if meal.fiber_g else None,
+        )
+
     return result.data[0]
 
 

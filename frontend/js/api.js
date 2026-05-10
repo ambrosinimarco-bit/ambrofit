@@ -69,6 +69,11 @@ const api = {
   syncStrava:       (uid) => apiFetch(`/api/strava/sync/${uid}`, { method: 'POST' }),
   resyncAllStrava:  (uid, days=90) => apiFetch(`/api/strava/resync-all/${uid}?days=${days}`, { method: 'POST' }),
 
+  // Food database
+  getFoods:     (uid, search = '') => apiFetch(`/api/foods/?user_id=${uid}${search ? '&search=' + encodeURIComponent(search) : ''}`),
+  createFood:   (data) => apiFetch('/api/foods/', { method: 'POST', body: data }),
+  deleteFood:   (id) => apiFetch(`/api/foods/${id}`, { method: 'DELETE' }),
+
   // Exercises
   getRoutines:    (uid) => apiFetch(`/api/exercises/?user_id=${uid}`),
   addRoutine:     (data) => apiFetch('/api/exercises/routines', { method: 'POST', body: data }),

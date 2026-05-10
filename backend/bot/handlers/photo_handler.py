@@ -112,11 +112,13 @@ def _save_food_meal(db, user_id: str, result: dict):
 
 def _save_label_meal(db, user_id: str, result: dict, quantity: float):
     per_qty = result.get("per_quantity", {})
+    per_100 = result.get("per_100g", {})
+    product_name = result.get("product_name", "Prodotto da etichetta")
     db.table("meals").insert({
         "user_id": user_id,
         "meal_date": date.today().isoformat(),
         "meal_time": "snack",
-        "name": result.get("product_name", "Prodotto da etichetta"),
+        "name": product_name,
         "calories": per_qty.get("calories", 0),
         "protein_g": per_qty.get("protein_g", 0),
         "carbs_g": per_qty.get("carbs_g", 0),
@@ -125,6 +127,18 @@ def _save_label_meal(db, user_id: str, result: dict, quantity: float):
         "quantity_g": quantity,
         "source": "telegram_label",
     }).execute()
+
+    # Save to personal food database using per-100g values from the label
+    if per_100 and per_100.get("calories"):
+        from backend.services.food_service import upsert_food_item
+        upsert_food_item(
+            db, user_id, product_name, "foto_etichetta",
+            calories_per_100g=per_100.get("calories"),
+            protein_per_100g=per_100.get("protein_g"),
+            carbs_per_100g=per_100.get("carbs_g"),
+            fat_per_100g=per_100.get("fat_g"),
+            fiber_per_100g=per_100.get("fiber_g"),
+        )
 
 
 def _save_garmin_data(db, user_id: str, result: dict) -> str | None:
