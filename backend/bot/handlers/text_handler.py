@@ -218,19 +218,21 @@ async def dispatch_message(
                 "source":    source,
             }).execute()
 
-            # Auto-save single-item meals to personal food database
-            if len(items) == 1 and not db_hits:
-                item = items[0]
-                qty = float(item.get("quantity_g") or 0)
-                if qty > 0 and item.get("calories"):
-                    upsert_food_item(
-                        db, user_id, item.get("name", meal_name), source,
-                        calories_per_100g=item["calories"] * 100 / qty,
-                        protein_per_100g=(item.get("protein_g") or 0) * 100 / qty or None,
-                        carbs_per_100g=(item.get("carbs_g") or 0) * 100 / qty or None,
-                        fat_per_100g=(item.get("fat_g") or 0) * 100 / qty or None,
-                        fiber_per_100g=(item.get("fiber_g") or 0) * 100 / qty or None,
-                    )
+            # Auto-save each item that has a quantity to the personal food database.
+            # Skip items whose values were already sourced from food_items (db_hits).
+            if not db_hits:
+                for item in items:
+                    item_name = item.get("name", "")
+                    qty = float(item.get("quantity_g") or 0)
+                    if item_name and qty > 0 and item.get("calories"):
+                        upsert_food_item(
+                            db, user_id, item_name, source,
+                            calories_per_100g=item["calories"] * 100 / qty,
+                            protein_per_100g=(item.get("protein_g") or 0) * 100 / qty or None,
+                            carbs_per_100g=(item.get("carbs_g") or 0) * 100 / qty or None,
+                            fat_per_100g=(item.get("fat_g") or 0) * 100 / qty or None,
+                            fiber_per_100g=(item.get("fiber_g") or 0) * 100 / qty or None,
+                        )
 
             confidence_emoji = {"high": "✅", "medium": "⚠️", "low": "❓"}.get(result.get("confidence", "medium"), "⚠️")
             items_text = "\n".join(f"  • {i['name']}: {i.get('calories', 0)} kcal" for i in items)

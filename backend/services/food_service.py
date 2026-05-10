@@ -24,12 +24,7 @@ def upsert_food_item(
     try:
         existing = db.table("food_items").select("id") \
             .eq("user_id", user_id).ilike("name", name.strip()).limit(1).execute()
-        if existing.data:
-            return
-        row = {k: v for k, v in {
-            "user_id":           user_id,
-            "name":              name.strip(),
-            "brand":             brand,
+        nutrient_fields = {k: v for k, v in {
             "calories_per_100g": round(calories_per_100g, 1) if calories_per_100g else None,
             "protein_per_100g":  round(protein_per_100g, 1) if protein_per_100g else None,
             "carbs_per_100g":    round(carbs_per_100g, 1) if carbs_per_100g else None,
@@ -37,7 +32,14 @@ def upsert_food_item(
             "fiber_per_100g":    round(fiber_per_100g, 1) if fiber_per_100g else None,
             "source":            source,
         }.items() if v is not None}
-        db.table("food_items").insert(row).execute()
+        if existing.data:
+            db.table("food_items").update(nutrient_fields) \
+                .eq("id", existing.data[0]["id"]).execute()
+        else:
+            insert_row = {"user_id": user_id, "name": name.strip(), **nutrient_fields}
+            if brand:
+                insert_row["brand"] = brand
+            db.table("food_items").insert(insert_row).execute()
     except Exception:
         pass  # never block the main flow
 
