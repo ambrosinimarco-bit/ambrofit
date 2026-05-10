@@ -1,4 +1,5 @@
-from fastapi import APIRouter
+import base64 as _b64
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from backend.database.client import get_supabase
 
@@ -66,3 +67,17 @@ def delete_food(food_id: str):
     db = get_supabase()
     db.table("food_items").delete().eq("id", food_id).execute()
     return {"ok": True}
+
+
+class PhotoAnalyzeRequest(BaseModel):
+    image_b64: str
+
+
+@router.post("/analyze-photo")
+def analyze_food_photo_route(req: PhotoAnalyzeRequest):
+    from backend.services.claude_service import analyze_nutrition_label
+    try:
+        image_bytes = _b64.b64decode(req.image_b64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Immagine non valida")
+    return analyze_nutrition_label(image_bytes)

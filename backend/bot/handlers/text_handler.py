@@ -12,7 +12,8 @@ from backend.bot.handlers.command_handler import get_or_create_user
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = await get_or_create_user(update)
     text = update.message.text.strip()
-    await update.message.reply_text("Sto analizzando il messaggio...")
+    if not context.user_data.get("pending_meal"):
+        await update.message.reply_text("Sto analizzando il messaggio...")
     await dispatch_message(update, context, user_id, text, source="telegram_text")
 
 
@@ -59,6 +60,40 @@ def _quick_classify(text: str) -> str | None:
     return None
 
 
+def _save_pending_meal(db, user_id: str, pending: dict) -> None:
+    """Persist a confirmed pending meal to meals + food_items."""
+    from backend.services.food_service import upsert_food_item
+    name = pending["name"]
+    brand = pending.get("brand") or ""
+    # Combined display name: "Stracchino Conad" (avoid doubling if brand already in name)
+    full_name = (f"{name} {brand}".strip() if brand and brand.lower() not in name.lower() else name)
+    qty = pending.get("quantity_g") or 0
+    db.table("meals").insert({
+        "user_id":    user_id,
+        "meal_date":  pending["meal_date"],
+        "meal_time":  pending["meal_time"],
+        "name":       full_name,
+        "calories":   pending["calories"],
+        "protein_g":  pending["protein_g"],
+        "carbs_g":    pending["carbs_g"],
+        "fat_g":      pending["fat_g"],
+        "fiber_g":    pending["fiber_g"],
+        "quantity_g": qty if qty > 0 else None,
+        "notes":      pending["text"],
+        "source":     pending["source"],
+    }).execute()
+    if qty > 0 and pending["calories"]:
+        upsert_food_item(
+            db, user_id, full_name, pending["source"],
+            calories_per_100g=pending["calories"] * 100 / qty,
+            protein_per_100g=(pending["protein_g"] or 0) * 100 / qty or None,
+            carbs_per_100g=(pending["carbs_g"] or 0) * 100 / qty or None,
+            fat_per_100g=(pending["fat_g"] or 0) * 100 / qty or None,
+            fiber_per_100g=(pending["fiber_g"] or 0) * 100 / qty or None,
+            brand=brand or None,
+        )
+
+
 async def dispatch_message(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -68,6 +103,50 @@ async def dispatch_message(
 ) -> None:
     """Classifica il testo (o trascritto vocale) e smista all'azione corretta."""
     try:
+        # ── Handle pending meal confirmation ──────────────────────────
+        pending = context.user_data.get("pending_meal") if context else None
+        if pending:
+            t = text.strip()
+            t_up = t.upper()
+            db_inner = get_supabase()
+            if t_up == "SI":
+                _save_pending_meal(db_inner, user_id, pending)
+                del context.user_data["pending_meal"]
+                full = pending["name"]
+                b = pending.get("brand")
+                if b and b.lower() not in full.lower():
+                    full = f"{full} {b}"
+                await update.message.reply_text(f"✅ Pasto salvato: *{full}*", parse_mode="Markdown")
+            elif t_up.startswith("NOME:"):
+                new_name = t[5:].strip()
+                if new_name:
+                    pending["name"] = new_name
+                    pending.pop("brand", None)
+                    _save_pending_meal(db_inner, user_id, pending)
+                    del context.user_data["pending_meal"]
+                    await update.message.reply_text(f"✅ Pasto salvato con nome: *{new_name}*", parse_mode="Markdown")
+                else:
+                    await update.message.reply_text("Nome vuoto. Rispondi NOME: [nome alimento]")
+            elif t_up.startswith("BRAND:"):
+                new_brand = t[6:].strip()
+                pending["brand"] = new_brand
+                _save_pending_meal(db_inner, user_id, pending)
+                del context.user_data["pending_meal"]
+                await update.message.reply_text(f"✅ Pasto salvato con brand: *{new_brand}*", parse_mode="Markdown")
+            elif t_up == "ANNULLA":
+                del context.user_data["pending_meal"]
+                await update.message.reply_text("❌ Registrazione annullata.")
+            else:
+                await update.message.reply_text(
+                    "Non ho capito. Rispondi:\n"
+                    "✅ *SI* per confermare\n"
+                    "✏️ *NOME: [nuovo nome]* per correggere\n"
+                    "✏️ *BRAND: [brand]* per correggere il brand\n"
+                    "❌ *ANNULLA* per annullare",
+                    parse_mode="Markdown",
+                )
+            return
+
         quick = _quick_classify(text)
         if quick:
             data_type = quick
@@ -174,15 +253,15 @@ async def dispatch_message(
             # Pasto (meal o general) — analisi nutrizionale dettagliata
             from backend.services.food_service import (
                 clean_food_name, extract_quantity_g,
-                lookup_food_item, calculate_for_quantity, upsert_food_item,
+                lookup_food_item_fuzzy, calculate_for_quantity, upsert_food_item,
             )
 
             meal_time = _extract_meal_time(text) or "snack"
 
-            # ── Step 1: try food_items BEFORE calling Claude ────────────
+            # ── Step 1: fuzzy lookup in food_items BEFORE calling Claude ─
             candidate_name = clean_food_name(text)
             candidate_qty  = extract_quantity_g(text) or 100.0
-            fi = lookup_food_item(db, user_id, candidate_name) if candidate_name else None
+            fi = lookup_food_item_fuzzy(db, user_id, candidate_name) if candidate_name else None
 
             if fi:
                 vals = calculate_for_quantity(fi, candidate_qty)
@@ -214,20 +293,15 @@ async def dispatch_message(
             result = analyze_food_text(text)
             meal_time = _extract_meal_time(text) or result.get("meal_time") or "snack"
             items = result.get("items", [])
-            # Prefer item name for single-food messages (already clean: "Piada Riminese La Spessa")
-            if len(items) == 1 and items[0].get("name"):
-                meal_name = items[0]["name"]
-            else:
-                meal_name = result.get("meal_name") or text[:50]
 
-            # Override Claude's values with food_items where item names match
+            # Override Claude values with food_items where names fuzzy-match
             db_hits: list[str] = []
             for item in items:
                 item_name = item.get("name", "")
                 qty = float(item.get("quantity_g") or 0)
                 if not item_name or qty <= 0:
                     continue
-                item_fi = lookup_food_item(db, user_id, item_name)
+                item_fi = lookup_food_item_fuzzy(db, user_id, item_name)
                 if item_fi:
                     item.update(calculate_for_quantity(item_fi, qty))
                     db_hits.append(item_fi["name"])
@@ -245,6 +319,49 @@ async def dispatch_message(
                 total_fat   = result.get("total_fat_g", 0)
                 total_fiber = result.get("total_fiber_g", 0)
 
+            # ── Single-item from Claude → ask confirmation ───────────────
+            if len(items) == 1 and not db_hits and context:
+                item = items[0]
+                item_brand = item.get("brand") or None
+                item_name  = item.get("name") or text[:50]
+                qty = float(item.get("quantity_g") or 0)
+                brand_str  = item_brand or "non specificato"
+                context.user_data["pending_meal"] = {
+                    "meal_date":  date.today().isoformat(),
+                    "meal_time":  meal_time,
+                    "name":       item_name,
+                    "brand":      item_brand,
+                    "calories":   total_cal,
+                    "protein_g":  total_prot,
+                    "carbs_g":    total_carbs,
+                    "fat_g":      total_fat,
+                    "fiber_g":    total_fiber,
+                    "quantity_g": qty if qty > 0 else None,
+                    "text":       text,
+                    "source":     source,
+                }
+                await update.message.reply_text(
+                    f"Ho registrato:\n"
+                    f"📦 Nome: {item_name}\n"
+                    f"🏷️ Brand: {brand_str}\n\n"
+                    f"Rispondi:\n"
+                    f"✅ *SI* per confermare\n"
+                    f"✏️ *NOME: [nuovo nome]* per correggere\n"
+                    f"✏️ *BRAND: [brand]* per correggere il brand\n"
+                    f"❌ *ANNULLA* per annullare",
+                    parse_mode="Markdown",
+                )
+                return
+
+            # ── Multi-item or DB-overridden → save immediately ───────────
+            if len(items) == 1 and items[0].get("name"):
+                meal_name = items[0]["name"]
+                b = items[0].get("brand")
+                if b and b.lower() not in meal_name.lower():
+                    meal_name = f"{meal_name} {b}"
+            else:
+                meal_name = result.get("meal_name") or text[:50]
+
             db.table("meals").insert({
                 "user_id":   user_id,
                 "meal_date": date.today().isoformat(),
@@ -259,23 +376,26 @@ async def dispatch_message(
                 "source":    source,
             }).execute()
 
-            # Auto-save each item to food_items when values come from Claude
+            # Auto-save each item to food_items when values came from Claude
             if not db_hits:
                 for item in items:
                     item_name = item.get("name", "")
+                    b = item.get("brand")
+                    save_name = f"{item_name} {b}".strip() if b and b.lower() not in item_name.lower() else item_name
                     qty = float(item.get("quantity_g") or 0)
-                    if item_name and qty > 0 and item.get("calories"):
+                    if save_name and qty > 0 and item.get("calories"):
                         upsert_food_item(
-                            db, user_id, item_name, source,
+                            db, user_id, save_name, source,
                             calories_per_100g=item["calories"] * 100 / qty,
                             protein_per_100g=(item.get("protein_g") or 0) * 100 / qty or None,
                             carbs_per_100g=(item.get("carbs_g") or 0) * 100 / qty or None,
                             fat_per_100g=(item.get("fat_g") or 0) * 100 / qty or None,
                             fiber_per_100g=(item.get("fiber_g") or 0) * 100 / qty or None,
+                            brand=b or None,
                         )
 
             confidence_emoji = {"high": "✅", "medium": "⚠️", "low": "❓"}.get(result.get("confidence", "medium"), "⚠️")
-            items_text = "\n".join(f"  • {i['name']}: {i.get('calories', 0)} kcal" for i in items)
+            items_text = "\n".join(f"  • {i.get('name','')}{' (' + i['brand'] + ')' if i.get('brand') else ''}: {i.get('calories', 0)} kcal" for i in items)
             db_note = f"\n_📂 Valori da database personale: {', '.join(db_hits)}_" if db_hits else ""
             reply = (
                 f"{confidence_emoji} *{meal_name}*\n\n"

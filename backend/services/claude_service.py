@@ -23,7 +23,11 @@ Rispondi con JSON esatto:
   "meal_name": "solo nome alimento + marca se presente (es. 'Piada Riminese La Spessa', 'Stracchino Conad', 'Banana'). NON includere orario, quantità, verbi o contesto.",
   "meal_time": "breakfast|lunch|dinner|snack",
   "items": [
-    {{"name": "nome alimento + marca (es. 'Gnocchi Coop', 'Banana')", "quantity_g": 0, "calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0, "fiber_g": 0}}
+    {{
+      "name": "nome alimento SENZA brand (es. 'Stracchino', 'Gnocchi', 'Banana')",
+      "brand": "brand/marca se presente, null altrimenti (es. 'Conad', 'Coop', null)",
+      "quantity_g": 0, "calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0, "fiber_g": 0
+    }}
   ],
   "total_calories": 0,
   "total_protein_g": 0,

@@ -116,6 +116,35 @@ def lookup_food_item(db, user_id: str, query: str) -> dict | None:
         return None
 
 
+def lookup_food_item_fuzzy(db, user_id: str, query: str) -> dict | None:
+    """Fuzzy lookup: substring match first, then all-significant-words match.
+
+    Allows "fiocchi avena" to find "Fiocchi d'Avena Coop".
+    """
+    if not query:
+        return None
+    try:
+        q = query.strip()
+        # 1. Direct substring
+        res = db.table("food_items").select("*") \
+            .eq("user_id", user_id).ilike("name", f"%{q}%") \
+            .order("name").limit(1).execute()
+        if res.data:
+            return res.data[0]
+        # 2. All words (len ≥ 3) present anywhere in the name (order-independent)
+        words = [w for w in q.lower().split() if len(w) >= 3]
+        if len(words) >= 2:
+            all_items = db.table("food_items").select("*") \
+                .eq("user_id", user_id).execute()
+            for item in (all_items.data or []):
+                name_lower = item["name"].lower()
+                if all(w in name_lower for w in words):
+                    return item
+        return None
+    except Exception:
+        return None
+
+
 def calculate_for_quantity(item: dict, quantity_g: float) -> dict:
     """Scale per-100g nutritional values to the given quantity."""
     f = quantity_g / 100

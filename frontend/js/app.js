@@ -1810,6 +1810,23 @@ async function deleteFoodItem(id) {
 
 let editingFoodId = null;
 
+function _openFoodEditModal(title, note) {
+  const t = document.getElementById('foodEditModalTitle');
+  const n = document.getElementById('foodEditSourceNote');
+  if (t) t.textContent = title;
+  if (n) n.textContent = note || '';
+  const btn = document.getElementById('foodEditSaveBtn');
+  if (btn) btn.disabled = false;
+  openModal('modalFoodEdit');
+}
+
+function openFoodManualAddModal() {
+  editingFoodId = '__new__';
+  ['foodEditName','foodEditBrand','foodEditCalories','foodEditProtein','foodEditCarbs','foodEditFat','foodEditFiber']
+    .forEach(id => setVal(id, ''));
+  _openFoodEditModal('Aggiungi alimento', '');
+}
+
 function openFoodEditModal(foodId) {
   const f = foodDBCache.find(item => item.id === foodId);
   if (!f) return;
@@ -1821,7 +1838,42 @@ function openFoodEditModal(foodId) {
   setVal('foodEditCarbs',    f.carbs_per_100g    != null ? f.carbs_per_100g    : '');
   setVal('foodEditFat',      f.fat_per_100g      != null ? f.fat_per_100g      : '');
   setVal('foodEditFiber',    f.fiber_per_100g    != null ? f.fiber_per_100g    : '');
-  openModal('modalFoodEdit');
+  _openFoodEditModal('Modifica alimento', '');
+}
+
+function triggerFoodPhotoUpload() {
+  document.getElementById('foodPhotoInput')?.click();
+}
+
+async function handleFoodPhotoFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const btn = document.getElementById('foodPhotoBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Analisi...'; }
+  try {
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = ev => resolve(ev.target.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    const result = await api.analyzeFoodPhoto(base64);
+    const per100 = result.per_100g || {};
+    editingFoodId = '__new__';
+    setVal('foodEditName',     result.product_name || '');
+    setVal('foodEditBrand',    '');
+    setVal('foodEditCalories', per100.calories   ?? '');
+    setVal('foodEditProtein',  per100.protein_g  ?? '');
+    setVal('foodEditCarbs',    per100.carbs_g    ?? '');
+    setVal('foodEditFat',      per100.fat_g      ?? '');
+    setVal('foodEditFiber',    per100.fiber_g    ?? '');
+    _openFoodEditModal('Aggiungi da foto etichetta', '📷 Dati estratti dall\'etichetta — verifica prima di salvare');
+  } catch (err) {
+    alert('Errore nell\'analisi della foto: ' + err.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📷 Da foto etichetta'; }
+    e.target.value = '';
+  }
 }
 
 async function saveFoodEdit() {
@@ -1829,9 +1881,8 @@ async function saveFoodEdit() {
   const name = getVal('foodEditName').trim();
   if (!name) { alert('Inserisci il nome dell\'alimento'); return; }
 
-  const f = foodDBCache.find(item => item.id === editingFoodId);
   const data = {
-    user_id:           f?.user_id || USER_ID,
+    user_id:           USER_ID,
     name,
     brand:             getVal('foodEditBrand') || null,
     calories_per_100g: parseFloatOrNull('foodEditCalories'),
@@ -1839,19 +1890,22 @@ async function saveFoodEdit() {
     carbs_per_100g:    parseFloatOrNull('foodEditCarbs'),
     fat_per_100g:      parseFloatOrNull('foodEditFat'),
     fiber_per_100g:    parseFloatOrNull('foodEditFiber'),
-    source:            f?.source || 'manuale',
+    source:            'manual',
   };
 
   const btn = document.getElementById('foodEditSaveBtn');
   if (btn) btn.disabled = true;
   try {
-    const updated = await api.updateFood(editingFoodId, data);
-    // Update local cache
-    const idx = foodDBCache.findIndex(item => item.id === editingFoodId);
-    if (idx !== -1) foodDBCache[idx] = { ...foodDBCache[idx], ...updated };
+    if (editingFoodId === '__new__') {
+      await api.createFood(data);
+    } else {
+      const f = foodDBCache.find(item => item.id === editingFoodId);
+      if (f) { data.user_id = f.user_id; data.source = f.source || 'manual'; }
+      await api.updateFood(editingFoodId, data);
+    }
     editingFoodId = null;
     closeModal();
-    renderFoodItems(foodDBCache);
+    await loadFoodDB();
   } catch (e) {
     alert('Errore nel salvataggio: ' + e.message);
     if (btn) btn.disabled = false;

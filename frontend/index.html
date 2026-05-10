@@ -218,6 +218,11 @@
             <span id="foodDBToggleIcon" style="color:var(--text2);font-size:.85rem">▼</span>
           </div>
           <div id="foodDBSection" style="display:none;margin-top:.75rem">
+            <div style="display:flex;gap:.5rem;margin-bottom:.6rem">
+              <button id="foodPhotoBtn" class="btn btn-sm btn-outline" onclick="triggerFoodPhotoUpload()" style="flex:1">📷 Da foto etichetta</button>
+              <button class="btn btn-sm btn-outline" onclick="openFoodManualAddModal()" style="flex:1">✏️ Aggiungi manualmente</button>
+            </div>
+            <input type="file" id="foodPhotoInput" accept="image/*" style="display:none" onchange="handleFoodPhotoFile(event)">
             <input type="text" id="foodSearchInput" placeholder="🔍 Cerca alimento..."
                    class="form-input" oninput="searchFoodItems()"
                    style="width:100%;box-sizing:border-box;margin-bottom:.75rem">
@@ -785,13 +790,14 @@
     </div>
   </div>
 
-  <!-- Food edit modal -->
+  <!-- Food edit/add modal -->
   <div class="modal" id="modalFoodEdit">
     <div class="modal-header">
-      <h3>Modifica alimento</h3>
+      <h3 id="foodEditModalTitle">Modifica alimento</h3>
       <button class="modal-close" onclick="closeModal()">×</button>
     </div>
     <div class="modal-body">
+      <div id="foodEditSourceNote" style="font-size:.78rem;color:var(--accent);margin-bottom:.5rem"></div>
       <div class="form-group"><label>Nome *</label><input type="text" id="foodEditName" /></div>
       <div class="form-group"><label>Brand</label><input type="text" id="foodEditBrand" placeholder="opzionale" /></div>
       <div class="form-group"><label>Calorie / 100g</label><input type="number" id="foodEditCalories" /></div>
