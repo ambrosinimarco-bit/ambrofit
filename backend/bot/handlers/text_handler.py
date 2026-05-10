@@ -18,6 +18,21 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 _STATUS_HINTS = ('come sto', 'quanto posso', 'cosa posso mangiare', 'situazione oggi', 'riepilogo')
 _PLAN_PATTERNS = ('crea piano', 'pianifica', 'piano settimana', 'piano allenament', 'programma settimana', 'programma allenament')
+
+_MEAL_TIME_KEYWORDS = {
+    "breakfast": ("colazione", "breakfast", "stamattina", "mattino", "mattina"),
+    "lunch":     ("pranzo", "lunch", "mezzogiorno", "a pranzo", "per pranzo"),
+    "dinner":    ("cena", "dinner", "stasera", "sera", "a cena", "per cena"),
+}
+
+def _extract_meal_time(text: str) -> str | None:
+    """Returns the meal type if the text contains an explicit indication, else None."""
+    t = text.lower()
+    for meal_time, keywords in _MEAL_TIME_KEYWORDS.items():
+        if any(k in t for k in keywords):
+            return meal_time
+    return None
+
 _STRONG_INTERROGATIVES = (
     'quale ', 'quali ', 'perché ', 'perche ', 'chi ', 'dove ',
     'spiegami ', 'parlami ', 'descrivimi ', 'che ftp', 'che potenza',
@@ -158,10 +173,12 @@ async def dispatch_message(
         else:
             # Pasto (meal o general) — analisi nutrizionale dettagliata
             result = analyze_food_text(text)
+            # Explicit user indication takes priority over Claude's guess
+            meal_time = _extract_meal_time(text) or result.get("meal_time") or "snack"
             db.table("meals").insert({
                 "user_id": user_id,
                 "meal_date": date.today().isoformat(),
-                "meal_time": result.get("meal_time", "snack"),
+                "meal_time": meal_time,
                 "name": result.get("meal_name", text[:50]),
                 "calories": result.get("total_calories", 0),
                 "protein_g": result.get("total_protein_g", 0),

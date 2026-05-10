@@ -790,6 +790,7 @@ function openEditMealModal(mealId) {
 
 function openAddMealModal() {
   editingMealId = null;
+  setVal('mealTime', 'snack');
   ['mealName','mealCalories','mealProtein','mealCarbs','mealFat','mealFiber','mealQuantity','mealNotes']
     .forEach(id => setVal(id, ''));
   const header = document.querySelector('#modalMeal .modal-header h3');
@@ -855,7 +856,7 @@ async function saveMeal() {
   const data = {
     user_id: USER_ID,
     meal_date: nutritionDate,
-    meal_time: getVal('mealTime'),
+    meal_time: getVal('mealTime') || 'snack',
     name: getVal('mealName'),
     calories: parseFloat(getVal('mealCalories')) || 0,
     protein_g: parseFloat(getVal('mealProtein')) || 0,
