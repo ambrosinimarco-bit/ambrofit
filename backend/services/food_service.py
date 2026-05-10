@@ -1,5 +1,55 @@
 from __future__ import annotations
+import re
 
+# ── Name cleaning ─────────────────────────────────────────────────────────────
+
+_MEAL_CONTEXT_RE = re.compile(
+    r'\b(?:colazione|pranzo|cena|spuntino|merenda|dessert|breakfast|lunch|dinner|snack)\b',
+    re.IGNORECASE,
+)
+_QUANTITY_RE = re.compile(
+    r'\b\d+(?:[.,]\d+)?\s*(?:g|gr|grammi?|kg|ml|cl|dl|l|litri?|porzioni?|fett[ae]|cucchiai[no]?|cucchiaini?|tazz[ae])\b',
+    re.IGNORECASE,
+)
+# Filler words that are never part of a food name.
+# Prepositions like "di" are intentionally excluded: they ARE part of names
+# ("petto di pollo", "olio di oliva") and are only noise at the string edges.
+_FILLER_RE = re.compile(
+    r'\b(?:'
+    r'ho\s+mangiato|ho\s+bevuto|ho\s+preso|sto\s+mangiando'
+    r'|mangiato|bevuto|mangio|bevo'
+    r'|un\s+po\b|un\s+pochino'             # "un po'" residue
+    r'|come|oggi|stamattina|stamani|ieri|stasera|adesso|ora'
+    r'|circa|quasi|solo|solamente|appena|già'
+    r'|questo|questa|questi|queste|quello|quella'
+    r')\b',
+    re.IGNORECASE,
+)
+# Prepositions/articles that are noise only at the START of the cleaned string
+_LEADING_PREP_RE = re.compile(
+    r'^(?:di|da|per|con|a|e|ed|un[ao]?|del|della|dello|degli?|delle?|dei?|il|la|lo|le|gli|i|al|alla|allo)\s+',
+    re.IGNORECASE,
+)
+# Prepositions/articles that are noise only at the END of the cleaned string
+_TRAILING_PREP_RE = re.compile(
+    r'\s+(?:di|da|per|con|a|e|ed|al|alla|allo|del|della|dello|degli?|delle?|il|la|lo|le|gli|i)$',
+    re.IGNORECASE,
+)
+
+
+def clean_food_name(name: str) -> str:
+    """Strip meal-time context, quantities and filler words; title-case the result."""
+    s = _MEAL_CONTEXT_RE.sub(' ', name)
+    s = _QUANTITY_RE.sub(' ', s)
+    s = _FILLER_RE.sub(' ', s)
+    s = re.sub(r'\s{2,}', ' ', s).strip(" ,'\"")
+    # Strip leading/trailing prepositions left behind after previous substitutions
+    s = _LEADING_PREP_RE.sub('', s).strip()
+    s = _TRAILING_PREP_RE.sub('', s).strip()
+    return ' '.join(w.capitalize() for w in s.split()) if s else ''
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
 
 def upsert_food_item(
     db,
@@ -14,16 +64,21 @@ def upsert_food_item(
     fiber_per_100g: float | None = None,
     brand: str | None = None,
 ) -> None:
-    """Insert a food item into the personal database if not already present.
+    """Upsert a food item into the personal database.
 
-    Uses case-insensitive name match per user to avoid duplicates.
-    Silently skips if there is no meaningful nutritional data.
+    The name is cleaned (meal-time context, quantities, filler words removed)
+    before the case-insensitive duplicate check and before saving.
+    Silently skips if there is no meaningful nutritional data or if the
+    cleaned name is empty.
     """
     if not (calories_per_100g or protein_per_100g or carbs_per_100g):
         return
+    clean_name = clean_food_name(name)
+    if not clean_name:
+        return
     try:
         existing = db.table("food_items").select("id") \
-            .eq("user_id", user_id).ilike("name", name.strip()).limit(1).execute()
+            .eq("user_id", user_id).ilike("name", clean_name).limit(1).execute()
         nutrient_fields = {k: v for k, v in {
             "calories_per_100g": round(calories_per_100g, 1) if calories_per_100g else None,
             "protein_per_100g":  round(protein_per_100g, 1) if protein_per_100g else None,
@@ -36,7 +91,7 @@ def upsert_food_item(
             db.table("food_items").update(nutrient_fields) \
                 .eq("id", existing.data[0]["id"]).execute()
         else:
-            insert_row = {"user_id": user_id, "name": name.strip(), **nutrient_fields}
+            insert_row = {"user_id": user_id, "name": clean_name, **nutrient_fields}
             if brand:
                 insert_row["brand"] = brand
             db.table("food_items").insert(insert_row).execute()
