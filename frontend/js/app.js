@@ -1669,6 +1669,7 @@ function renderFoodItems(items) {
         </div>
       </div>
       <button class="btn btn-sm btn-outline" onclick="openFoodAddModal('${f.id}')" style="white-space:nowrap">+ Pasto</button>
+      <button class="meal-delete" onclick="openFoodEditModal('${f.id}')" title="Modifica">✏️</button>
       <button class="meal-delete" onclick="deleteFoodItem('${f.id}')" title="Elimina">🗑</button>
     </div>
   `).join('');
@@ -1753,6 +1754,56 @@ async function deleteFoodItem(id) {
   await api.deleteFood(id);
   foodDBCache = foodDBCache.filter(f => f.id !== id);
   renderFoodItems(foodDBCache);
+}
+
+let editingFoodId = null;
+
+function openFoodEditModal(foodId) {
+  const f = foodDBCache.find(item => item.id === foodId);
+  if (!f) return;
+  editingFoodId = foodId;
+  setVal('foodEditName',     f.name);
+  setVal('foodEditBrand',    f.brand || '');
+  setVal('foodEditCalories', f.calories_per_100g != null ? f.calories_per_100g : '');
+  setVal('foodEditProtein',  f.protein_per_100g  != null ? f.protein_per_100g  : '');
+  setVal('foodEditCarbs',    f.carbs_per_100g    != null ? f.carbs_per_100g    : '');
+  setVal('foodEditFat',      f.fat_per_100g      != null ? f.fat_per_100g      : '');
+  setVal('foodEditFiber',    f.fiber_per_100g    != null ? f.fiber_per_100g    : '');
+  openModal('modalFoodEdit');
+}
+
+async function saveFoodEdit() {
+  if (!editingFoodId) return;
+  const name = getVal('foodEditName').trim();
+  if (!name) { alert('Inserisci il nome dell\'alimento'); return; }
+
+  const f = foodDBCache.find(item => item.id === editingFoodId);
+  const data = {
+    user_id:           f?.user_id || USER_ID,
+    name,
+    brand:             getVal('foodEditBrand') || null,
+    calories_per_100g: parseFloatOrNull('foodEditCalories'),
+    protein_per_100g:  parseFloatOrNull('foodEditProtein'),
+    carbs_per_100g:    parseFloatOrNull('foodEditCarbs'),
+    fat_per_100g:      parseFloatOrNull('foodEditFat'),
+    fiber_per_100g:    parseFloatOrNull('foodEditFiber'),
+    source:            f?.source || 'manuale',
+  };
+
+  const btn = document.getElementById('foodEditSaveBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const updated = await api.updateFood(editingFoodId, data);
+    // Update local cache
+    const idx = foodDBCache.findIndex(item => item.id === editingFoodId);
+    if (idx !== -1) foodDBCache[idx] = { ...foodDBCache[idx], ...updated };
+    editingFoodId = null;
+    closeModal();
+    renderFoodItems(foodDBCache);
+  } catch (e) {
+    alert('Errore nel salvataggio: ' + e.message);
+    if (btn) btn.disabled = false;
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────

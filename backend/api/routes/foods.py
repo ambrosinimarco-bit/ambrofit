@@ -44,6 +44,23 @@ def create_food(item: FoodItemCreate):
     return res.data[0] if res.data else {}
 
 
+@router.put("/{food_id}")
+def update_food(food_id: str, item: FoodItemCreate):
+    db = get_supabase()
+    fields = {k: v for k, v in {
+        "name":              item.name.strip(),
+        "brand":             item.brand,
+        "calories_per_100g": item.calories_per_100g,
+        "protein_per_100g":  item.protein_per_100g,
+        "carbs_per_100g":    item.carbs_per_100g,
+        "fat_per_100g":      item.fat_per_100g,
+        "fiber_per_100g":    item.fiber_per_100g,
+        "source":            item.source,
+    }.items() if v is not None}
+    res = db.table("food_items").update(fields).eq("id", food_id).execute()
+    return res.data[0] if res.data else {}
+
+
 @router.delete("/{food_id}")
 def delete_food(food_id: str):
     db = get_supabase()

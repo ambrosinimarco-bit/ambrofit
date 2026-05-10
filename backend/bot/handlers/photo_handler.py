@@ -45,6 +45,28 @@ def _extract_quantity(caption: str) -> float:
     return 100.0
 
 
+# Tokens to strip before extracting the food name from a caption
+_CAPTION_STRIP_RE = re.compile(
+    r'(?:\b\d+(?:[.,]\d+)?\s*g(?:rammi?)?\b'   # "150g", "200 grammi"
+    r'|\b\d+(?:[.,]\d+)?\s*gr\b'               # "200gr"
+    r'|\bdi\b'                                  # preposition "di"
+    r'|\betichett[ae]\b'                        # "etichetta/e"
+    r'|\blabel\b'
+    r'|\bingredienti?\b'
+    r'|\bvalori\s+nutrizionali\b)',
+    re.IGNORECASE,
+)
+
+
+def _extract_food_name_from_caption(caption: str) -> str | None:
+    """Return the food name declared by the user in the caption, or None."""
+    if not caption:
+        return None
+    cleaned = _CAPTION_STRIP_RE.sub(" ", caption)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    return cleaned if len(cleaned) >= 2 else None
+
+
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = await get_or_create_user(update)
     caption = update.message.caption or ""
@@ -79,9 +101,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         elif photo_type == "label":
             await update.message.reply_text("📸 Sto analizzando la foto...")
             quantity = _extract_quantity(caption)
+            user_name = _extract_food_name_from_caption(caption)
             result = await asyncio.to_thread(analyze_nutrition_label, image_bytes, quantity)
-            _save_label_meal(db, user_id, result, quantity)
-            await update.message.reply_text(_format_label_reply(result, quantity), parse_mode="Markdown")
+            _save_label_meal(db, user_id, result, quantity, user_name)
+            await update.message.reply_text(_format_label_reply(result, quantity, user_name), parse_mode="Markdown")
 
         else:
             await update.message.reply_text("📸 Sto analizzando la foto...")
@@ -110,10 +133,17 @@ def _save_food_meal(db, user_id: str, result: dict):
     }).execute()
 
 
-def _save_label_meal(db, user_id: str, result: dict, quantity: float):
+def _save_label_meal(
+    db,
+    user_id: str,
+    result: dict,
+    quantity: float,
+    user_name: str | None = None,
+):
     per_qty = result.get("per_quantity", {})
     per_100 = result.get("per_100g", {})
-    product_name = result.get("product_name", "Prodotto da etichetta")
+    # User-declared name takes absolute priority over Claude's label recognition
+    product_name = user_name or result.get("product_name", "Prodotto da etichetta")
     db.table("meals").insert({
         "user_id": user_id,
         "meal_date": date.today().isoformat(),
@@ -333,11 +363,21 @@ def _format_food_reply(result: dict) -> str:
     )
 
 
-def _format_label_reply(result: dict, quantity: float) -> str:
+def _format_label_reply(
+    result: dict,
+    quantity: float,
+    user_name: str | None = None,
+) -> str:
     per_qty = result.get("per_quantity", {})
     per_100 = result.get("per_100g", {})
+    display_name = user_name or result.get("product_name", "Prodotto")
+    name_note = (
+        f"\n_📌 Nome dall'etichetta: {result.get('product_name', '')}_"
+        if user_name and result.get("product_name") and result["product_name"] != user_name
+        else ""
+    )
     return (
-        f"🏷 *{result.get('product_name', 'Prodotto')}* ({quantity}g)\n\n"
+        f"🏷 *{display_name}* ({quantity}g)\n\n"
         f"📊 *Per {quantity}g:*\n"
         f"🔥 Calorie: `{per_qty.get('calories', 0)} kcal`\n"
         f"💪 Proteine: `{per_qty.get('protein_g', 0)}g`\n"
@@ -346,6 +386,7 @@ def _format_label_reply(result: dict, quantity: float) -> str:
         f"🌿 Fibre: `{per_qty.get('fiber_g', 0)}g`\n\n"
         f"_Per 100g: {per_100.get('calories', 0)} kcal_\n"
         f"_Ingredienti: {result.get('ingredients_summary', 'n/d')}_"
+        f"{name_note}"
     )
 
 

@@ -72,6 +72,7 @@ const api = {
   // Food database
   getFoods:     (uid, search = '') => apiFetch(`/api/foods/?user_id=${uid}${search ? '&search=' + encodeURIComponent(search) : ''}`),
   createFood:   (data) => apiFetch('/api/foods/', { method: 'POST', body: data }),
+  updateFood:   (id, data) => apiFetch(`/api/foods/${id}`, { method: 'PUT', body: data }),
   deleteFood:   (id) => apiFetch(`/api/foods/${id}`, { method: 'DELETE' }),
 
   // Exercises
