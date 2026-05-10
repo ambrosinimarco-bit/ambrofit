@@ -306,7 +306,7 @@ Messaggio: "{transcript}"
 
 Rispondi con JSON esatto:
 {{
-  "type": "meal|activity|total_calories_iphone|weight|sleep|steps|correction|status|check_in|pre_condition|coach|zwo_request|general",
+  "type": "meal|activity|total_calories_iphone|weight|sleep|steps|correction|status|check_in|pre_condition|coach|zwo_request|delete_meal|food_lookup|delete_food_item|list_food_items|general",
   "data": {{
     "meal_name": "...", "calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0, "meal_time": "snack",
     "activity_type": "run|ride|swim|walk|strength|other", "duration_min": 0, "distance_km": null, "name": "...",
@@ -320,7 +320,9 @@ Rispondi con JSON esatto:
     "condition_pre": null,
     "condition_during": null,
     "condition_post": null,
-    "stress_level": null
+    "stress_level": null,
+    "target": "last|name (per delete_meal: 'last' se riferisce all'ultimo pasto, 'name' se menziona un nome)",
+    "query": "nome alimento da cercare/eliminare (per food_lookup, delete_food_item, e delete_meal con target=name)"
   }},
   "confidence": "high|medium|low"
 }}
@@ -340,6 +342,10 @@ Regole per il tipo:
 - pre_condition: descrive come si sente prima di allenarsi, senza registrare attività. Es: "mi sento stanco", "gambe pesanti oggi"
 - coach: qualsiasi domanda o richiesta che non sia registrazione dati. Usare per: domande su FTP/zone/potenza ("quale FTP hai usato?", "quali sono le mie zone?", "che potenza devo tenere?"), domande sull'allenamento ("come sto andando?", "ho saltato la sessione"), richieste di analisi, consigli, motivazione. Es COACH: "quale FTP hai usato?", "quali sono le mie zone di potenza?", "come sto andando con l'allenamento?", "perché mi sento stanco?", "cosa devo fare domani?"
 - zwo_request: richiesta di generare file .zwo per indoor. Es: "crea una sessione z2 45 minuti", "generami un workout sweetspot di 1 ora"
+- delete_meal: utente vuole eliminare/cancellare/togliere un pasto registrato. Es: "cancella l'ultimo pasto", "elimina la banana che ho inserito", "togli il pranzo di oggi", "rimuovi la colazione". Usa data.target="last" se non specifica il nome, data.target="name" + data.query=nome se lo specifica.
+- food_lookup: utente chiede info su un alimento del database personale. Es: "hai il kefir?", "quante calorie ha la piada riminese", "mostra il kefir", "informazioni sul riso". Metti il nome cercato in data.query.
+- delete_food_item: utente vuole eliminare un alimento dal database personale. Es: "elimina il kefir dal database", "cancella la piada dalla lista alimenti", "rimuovi lo stracchino". Metti il nome in data.query.
+- list_food_items: utente vuole vedere la lista degli alimenti salvati. Es: "mostra i miei alimenti", "lista alimenti", "quali alimenti ho salvato", "elenca il mio database".
 
 ESEMPI DI CLASSIFICAZIONE CORRETTA:
 ✅ "quale FTP hai usato?" → coach (domanda su parametro)

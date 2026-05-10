@@ -17,6 +17,7 @@ from backend.bot.handlers.command_handler import (
     cmd_strava,
     cmd_sync_strava,
     cmd_help,
+    cmd_alimenti,
 )
 from backend.bot.handlers.text_handler import handle_text
 from backend.bot.handlers.photo_handler import handle_photo
@@ -39,6 +40,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("strava", cmd_strava))
     app.add_handler(CommandHandler("syncstrava", cmd_sync_strava))
     app.add_handler(CommandHandler("aiuto", cmd_help))
+    app.add_handler(CommandHandler("alimenti", cmd_alimenti))
 
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))

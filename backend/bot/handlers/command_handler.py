@@ -251,14 +251,27 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/nuovopiano <obiettivo> — crea piano con AI\n"
         "/strava — collega account Strava\n"
         "/syncstrava — sincronizza attività Strava\n"
+        "/alimenti — lista alimenti nel database personale\n"
         "/aiuto — questo messaggio\n\n"
         "*Input supportati:*\n"
         "📝 Testo → pasti, attività, dati vari\n"
         "📸 Foto → cibo (stima calorie), etichette (legge valori), Garmin (estrae dati)\n"
         "🎙 Vocale → trascrizione automatica\n\n"
+        "*Gestione alimenti (testo libero):*\n"
+        "• \"cancella l'ultimo pasto\" / \"elimina la banana\"\n"
+        "• \"hai il kefir?\" / \"quante calorie ha la piada\"\n"
+        "• \"elimina il kefir dal database\"\n"
+        "• \"mostra i miei alimenti\"\n\n"
         "_Tip foto etichette: aggiungi '150g' nel caption per calcolare la porzione giusta_",
         parse_mode="Markdown",
     )
+
+
+async def cmd_alimenti(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = await get_or_create_user(update)
+    db = get_supabase()
+    from backend.bot.handlers.text_handler import _handle_list_food_items
+    await _handle_list_food_items(update, db, user_id)
 
 
 async def cmd_sync_strava(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

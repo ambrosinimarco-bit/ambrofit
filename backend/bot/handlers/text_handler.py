@@ -12,13 +12,18 @@ from backend.bot.handlers.command_handler import get_or_create_user
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = await get_or_create_user(update)
     text = update.message.text.strip()
-    if not context.user_data.get("pending_meal"):
+    _pending_keys = ("pending_meal", "pending_delete_meal", "pending_delete_food")
+    if not any(context.user_data.get(k) for k in _pending_keys):
         await update.message.reply_text("Sto analizzando il messaggio...")
     await dispatch_message(update, context, user_id, text, source="telegram_text")
 
 
 _STATUS_HINTS = ('come sto', 'quanto posso', 'cosa posso mangiare', 'situazione oggi', 'riepilogo')
 _PLAN_PATTERNS = ('crea piano', 'pianifica', 'piano settimana', 'piano allenament', 'programma settimana', 'programma allenament')
+_LIST_FOOD_PATTERNS = ('mostra alimenti', 'lista alimenti', 'alimenti salvati', 'miei alimenti', 'elenco alimenti', 'elenca alimenti')
+_DELETE_MEAL_PATTERNS = ("cancella l'ultimo pasto", "elimina l'ultimo pasto", "togli l'ultimo pasto",
+                         "cancella l'ultimo", "elimina l'ultimo", "togli l'ultimo",
+                         "cancella il pasto", "elimina il pasto", "togli il pasto", "rimuovi il pasto")
 
 _MEAL_TIME_KEYWORDS = {
     "breakfast": ("colazione", "breakfast", "stamattina", "mattino", "mattina"),
@@ -56,6 +61,12 @@ def _quick_classify(text: str) -> str | None:
 
     if any(p in t_lower for p in _PLAN_PATTERNS):
         return 'plan_request'
+
+    if any(p in t_lower for p in _LIST_FOOD_PATTERNS):
+        return 'list_food_items'
+
+    if any(p in t_lower for p in _DELETE_MEAL_PATTERNS):
+        return 'delete_meal'
 
     return None
 
@@ -143,6 +154,50 @@ async def dispatch_message(
                     "✏️ *NOME: [nuovo nome]* per correggere\n"
                     "✏️ *BRAND: [brand]* per correggere il brand\n"
                     "❌ *ANNULLA* per annullare",
+                    parse_mode="Markdown",
+                )
+            return
+
+        # ── Handle pending meal deletion confirmation ──────────────────
+        pending_dm = context.user_data.get("pending_delete_meal") if context else None
+        if pending_dm:
+            t_up = text.strip().upper()
+            if t_up == "SI":
+                db_inner = get_supabase()
+                db_inner.table("meals").delete().eq("id", pending_dm["meal_id"]).execute()
+                del context.user_data["pending_delete_meal"]
+                await update.message.reply_text(
+                    f"✅ Pasto eliminato: *{pending_dm['meal_name']}* ({round(pending_dm['calories'])} kcal)",
+                    parse_mode="Markdown",
+                )
+            elif t_up == "ANNULLA":
+                del context.user_data["pending_delete_meal"]
+                await update.message.reply_text("❌ Eliminazione annullata.")
+            else:
+                await update.message.reply_text(
+                    f"Vuoi eliminare *{pending_dm['meal_name']}*? Rispondi *SI* o *ANNULLA*.",
+                    parse_mode="Markdown",
+                )
+            return
+
+        # ── Handle pending food_item deletion confirmation ─────────────
+        pending_df = context.user_data.get("pending_delete_food") if context else None
+        if pending_df:
+            t_up = text.strip().upper()
+            if t_up == "SI":
+                db_inner = get_supabase()
+                db_inner.table("food_items").delete().eq("id", pending_df["food_id"]).execute()
+                del context.user_data["pending_delete_food"]
+                await update.message.reply_text(
+                    f"✅ Alimento eliminato dal database: *{pending_df['food_name']}*",
+                    parse_mode="Markdown",
+                )
+            elif t_up == "ANNULLA":
+                del context.user_data["pending_delete_food"]
+                await update.message.reply_text("❌ Eliminazione annullata.")
+            else:
+                await update.message.reply_text(
+                    f"Vuoi eliminare *{pending_df['food_name']}* dal database? Rispondi *SI* o *ANNULLA*.",
                     parse_mode="Markdown",
                 )
             return
@@ -236,6 +291,18 @@ async def dispatch_message(
 
         elif data_type == "plan_request":
             await _handle_plan_request(update, db, user_id, text)
+
+        elif data_type == "list_food_items":
+            await _handle_list_food_items(update, db, user_id)
+
+        elif data_type == "food_lookup":
+            await _handle_food_lookup(update, db, user_id, data.get("query") or text)
+
+        elif data_type == "delete_food_item":
+            await _handle_delete_food_item(update, context, db, user_id, data.get("query") or text)
+
+        elif data_type == "delete_meal":
+            await _handle_delete_meal(update, context, db, user_id, data)
 
         elif data_type == "weight":
             _upsert_health(db, user_id, {"weight_kg": data.get("weight_kg")})
@@ -711,3 +778,123 @@ async def _handle_correction(update, db, user_id: str, data: dict, original_text
         await update.message.reply_text(
             "Non riesco a correggere automaticamente questo dato. Usa la dashboard web per modificarlo."
         )
+
+
+# ── Food management helpers ───────────────────────────────────────────────────
+
+async def _handle_list_food_items(update, db, user_id: str) -> None:
+    items = db.table("food_items").select("*").eq("user_id", user_id)\
+        .order("name").limit(10).execute().data or []
+    if not items:
+        await update.message.reply_text(
+            "Nessun alimento salvato nel database personale.\n"
+            "Gli alimenti vengono aggiunti automaticamente quando inserisci pasti con nome e quantità."
+        )
+        return
+    total_res = db.table("food_items").select("id").eq("user_id", user_id).execute()
+    total = len(total_res.data or [])
+    lines = []
+    for f in items:
+        brand = f" ({f['brand']})" if f.get("brand") else ""
+        cal  = round(f.get("calories_per_100g") or 0)
+        prot = f.get("protein_per_100g") or 0
+        carbs = f.get("carbs_per_100g") or 0
+        fat  = f.get("fat_per_100g") or 0
+        lines.append(f"• *{f['name']}*{brand}\n  {cal} kcal · P:{prot}g · C:{carbs}g · G:{fat}g /100g")
+    suffix = f"\n\n_Mostrati 10 di {total}. Usa la dashboard per vedere tutti._" if total > 10 else ""
+    await update.message.reply_text(
+        f"🗂 *Database alimenti* ({total} totali):\n\n" + "\n\n".join(lines) + suffix,
+        parse_mode="Markdown",
+    )
+
+
+async def _handle_food_lookup(update, db, user_id: str, query: str) -> None:
+    from backend.services.food_service import lookup_food_item_fuzzy, clean_food_name
+    clean_q = clean_food_name(query) or query.strip()
+    fi = lookup_food_item_fuzzy(db, user_id, clean_q)
+    if not fi:
+        await update.message.reply_text(
+            f"🔍 Non ho trovato *{clean_q}* nel tuo database personale.\n"
+            "Puoi aggiungerlo mandando una foto dell'etichetta o inserendo un pasto con quel nome.",
+            parse_mode="Markdown",
+        )
+        return
+    brand = f" ({fi['brand']})" if fi.get("brand") else ""
+    cal   = round(fi.get("calories_per_100g") or 0)
+    prot  = fi.get("protein_per_100g") or 0
+    carbs = fi.get("carbs_per_100g") or 0
+    fat   = fi.get("fat_per_100g") or 0
+    fib   = fi.get("fiber_per_100g") or 0
+    src   = fi.get("source", "")
+    source_note = f"\n_Fonte: {src}_" if src else ""
+    await update.message.reply_text(
+        f"📦 *{fi['name']}*{brand}\n\n"
+        f"Per 100g:\n"
+        f"🔥 Calorie: `{cal} kcal`\n"
+        f"💪 Proteine: `{prot}g`\n"
+        f"🌾 Carboidrati: `{carbs}g`\n"
+        f"🫒 Grassi: `{fat}g`\n"
+        f"🌿 Fibre: `{fib}g`"
+        f"{source_note}",
+        parse_mode="Markdown",
+    )
+
+
+async def _handle_delete_food_item(update, context, db, user_id: str, query: str) -> None:
+    from backend.services.food_service import lookup_food_item_fuzzy, clean_food_name
+    clean_q = clean_food_name(query) or query.strip()
+    fi = lookup_food_item_fuzzy(db, user_id, clean_q)
+    if not fi:
+        await update.message.reply_text(
+            f"🔍 Non ho trovato *{clean_q}* nel database personale.",
+            parse_mode="Markdown",
+        )
+        return
+    if context:
+        context.user_data.pop("pending_meal", None)
+        context.user_data.pop("pending_delete_meal", None)
+        context.user_data["pending_delete_food"] = {
+            "food_id":   fi["id"],
+            "food_name": fi["name"],
+        }
+    await update.message.reply_text(
+        f"Vuoi eliminare *{fi['name']}* dal database personale?\n"
+        f"Rispondi *SI* per confermare o *ANNULLA* per annullare.",
+        parse_mode="Markdown",
+    )
+
+
+async def _handle_delete_meal(update, context, db, user_id: str, data: dict) -> None:
+    today = date.today().isoformat()
+    target = data.get("target", "last")
+    query  = data.get("query", "")
+
+    if target == "name" and query:
+        from backend.services.food_service import clean_food_name
+        clean_q = clean_food_name(query) or query.strip()
+        meals = db.table("meals").select("*").eq("user_id", user_id)\
+            .eq("meal_date", today).ilike("name", f"%{clean_q}%")\
+            .order("created_at", desc=True).limit(1).execute().data or []
+    else:
+        meals = db.table("meals").select("*").eq("user_id", user_id)\
+            .eq("meal_date", today).order("created_at", desc=True).limit(1).execute().data or []
+
+    if not meals:
+        await update.message.reply_text("Non ho trovato pasti registrati oggi da eliminare.")
+        return
+
+    meal = meals[0]
+    if context:
+        context.user_data.pop("pending_meal", None)
+        context.user_data.pop("pending_delete_food", None)
+        context.user_data["pending_delete_meal"] = {
+            "meal_id":   meal["id"],
+            "meal_name": meal["name"],
+            "calories":  meal.get("calories", 0),
+        }
+    cal_str = f" ({round(meal.get('calories', 0))} kcal)" if meal.get("calories") else ""
+    await update.message.reply_text(
+        f"Vuoi eliminare *{meal['name']}*{cal_str}?\n"
+        f"Rispondi *SI* per confermare o *ANNULLA* per annullare.",
+        parse_mode="Markdown",
+    )
