@@ -128,11 +128,15 @@ def _save_label_meal(db, user_id: str, result: dict, quantity: float):
 
 
 def _save_garmin_data(db, user_id: str, result: dict) -> str | None:
-    """Upsert garmin data: UPDATE today's existing garmin activity, INSERT if none."""
+    """Merge Garmin screenshot data into today's activity.
+
+    Priority: strava activity for same day → existing garmin activity → insert new.
+    When a Strava activity is found, any garmin_screenshot duplicates are deleted.
+    """
     target_date = result.get("date") or date.today().isoformat()
     screen_type = result.get("screen_type", "health")
 
-    # daily_health: upsert
+    # ── daily_health upsert ───────────────────────────────────────────
     has_health_data = any(result.get(k) for k in [
         "body_battery_end", "body_battery_start", "stress_score",
         "hrv_ms", "resting_hr", "sleep_hours", "steps",
@@ -141,7 +145,7 @@ def _save_garmin_data(db, user_id: str, result: dict) -> str | None:
     if has_health_data or screen_type in ("health", "mixed"):
         existing = db.table("daily_health").select("id")\
             .eq("user_id", user_id).eq("health_date", target_date).execute()
-        health_data = {
+        health_data = {k: v for k, v in {
             "user_id": user_id,
             "health_date": target_date,
             "body_battery": result.get("body_battery_end") or result.get("body_battery_start"),
@@ -150,51 +154,77 @@ def _save_garmin_data(db, user_id: str, result: dict) -> str | None:
             "resting_hr": result.get("resting_hr"),
             "sleep_hours": result.get("sleep_hours"),
             "steps": result.get("steps"),
-        }
-        health_data = {k: v for k, v in health_data.items() if v is not None}
+        }.items() if v is not None}
         if existing.data:
             db.table("daily_health").update(health_data).eq("id", existing.data[0]["id"]).execute()
         else:
             db.table("daily_health").insert(health_data).execute()
 
-    # activity: UPDATE if today's garmin_screenshot exists, else INSERT
+    # ── activity merge ────────────────────────────────────────────────
     has_activity_data = any(result.get(k) for k in [
         "avg_power_w", "normalized_power_w", "avg_hr_bpm", "duration_min",
     ])
     activity_id: str | None = None
-    if screen_type in ("activity", "mixed") or has_activity_data:
-        activity_data = {k: v for k, v in {
-            "activity_type": "ride",
-            "name": result.get("activity_name") or "Attività Garmin",
-            "duration_min": float(result.get("duration_min") or 0) or None,
-            "distance_km": result.get("distance_km"),
-            "elevation_m": result.get("elevation_m"),
-            "avg_heart_rate": result.get("avg_hr_bpm"),
-            "max_heart_rate": result.get("max_hr_bpm"),
-            "avg_power_w": result.get("avg_power_w"),
-            "normalized_power_w": result.get("normalized_power_w"),
-            "avg_cadence_rpm": result.get("avg_cadence_rpm"),
-            "tss": result.get("tss"),
-        }.items() if v is not None}
+    if not (screen_type in ("activity", "mixed") or has_activity_data):
+        return activity_id
 
-        existing = db.table("activities").select("id")\
+    garmin_fields = {k: v for k, v in {
+        "duration_min":        float(result.get("duration_min") or 0) or None,
+        "distance_km":         result.get("distance_km"),
+        "elevation_m":         result.get("elevation_m"),
+        "avg_heart_rate":      result.get("avg_hr_bpm"),
+        "max_heart_rate":      result.get("max_hr_bpm"),
+        "avg_power_w":         result.get("avg_power_w"),
+        "normalized_power_w":  result.get("normalized_power_w"),
+        "avg_cadence_rpm":     result.get("avg_cadence_rpm"),
+        "tss":                 result.get("tss"),
+    }.items() if v is not None}
+
+    # Priority 1: Strava activity on the same day
+    strava = db.table("activities").select("id")\
+        .eq("user_id", user_id).eq("activity_date", target_date)\
+        .eq("source", "strava").limit(1).execute()
+
+    if strava.data:
+        activity_id = strava.data[0]["id"]
+        db.table("activities").update(garmin_fields).eq("id", activity_id).execute()
+        logger.info("garmin: merged into strava activity_id=%s date=%s user=%s",
+                    activity_id, target_date, user_id)
+
+        # Remove any garmin_screenshot duplicates for this day
+        dupes = db.table("activities").select("id")\
             .eq("user_id", user_id).eq("activity_date", target_date)\
-            .eq("source", "garmin_screenshot").limit(1).execute()
+            .eq("source", "garmin_screenshot").execute()
+        if dupes.data:
+            for d in dupes.data:
+                db.table("activities").delete().eq("id", d["id"]).execute()
+            logger.info("garmin: removed %d stale garmin_screenshot duplicate(s) for date=%s user=%s",
+                        len(dupes.data), target_date, user_id)
+        return activity_id
 
-        if existing.data:
-            activity_id = existing.data[0]["id"]
-            db.table("activities").update(activity_data).eq("id", activity_id).execute()
-            logger.info("garmin: updated activity_id=%s for user=%s", activity_id, user_id)
-        else:
-            res = db.table("activities").insert({
-                "user_id": user_id,
-                "activity_date": target_date,
-                "source": "garmin_screenshot",
-                **activity_data,
-            }).execute()
-            if res.data:
-                activity_id = res.data[0]["id"]
-                logger.info("garmin: inserted activity_id=%s for user=%s", activity_id, user_id)
+    # Priority 2: existing garmin activity on the same day
+    garmin_existing = db.table("activities").select("id")\
+        .eq("user_id", user_id).eq("activity_date", target_date)\
+        .in_("source", ["garmin_screenshot", "garmin"]).limit(1).execute()
+
+    if garmin_existing.data:
+        activity_id = garmin_existing.data[0]["id"]
+        db.table("activities").update(garmin_fields).eq("id", activity_id).execute()
+        logger.info("garmin: updated garmin activity_id=%s user=%s", activity_id, user_id)
+        return activity_id
+
+    # Priority 3: insert new
+    res = db.table("activities").insert({
+        "user_id": user_id,
+        "activity_date": target_date,
+        "source": "garmin_screenshot",
+        "activity_type": "ride",
+        "name": result.get("activity_name") or "Attività Garmin",
+        **garmin_fields,
+    }).execute()
+    if res.data:
+        activity_id = res.data[0]["id"]
+        logger.info("garmin: inserted new activity_id=%s user=%s", activity_id, user_id)
 
     return activity_id
 
