@@ -99,6 +99,12 @@ def upsert_food_item(
         pass  # never block the main flow
 
 
+def extract_quantity_g(text: str) -> float | None:
+    """Extract the first gram quantity from a free-form text string."""
+    m = re.search(r'(\d+(?:[.,]\d+)?)\s*g(?:rammi?)?\b', text, re.IGNORECASE)
+    return float(m.group(1).replace(',', '.')) if m else None
+
+
 def lookup_food_item(db, user_id: str, query: str) -> dict | None:
     """Return the best-matching food_item for the query string, or None."""
     try:

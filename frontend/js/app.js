@@ -767,32 +767,55 @@ async function saveQuickWeight() {
 }
 
 // ─── Edit pasto ───────────────────────────────────────────────────
-function openEditMealModal(mealId) {
+// Per-100g baseline used for auto-recalculation when quantity changes
+let editMealPer100 = null;
+
+async function openEditMealModal(mealId) {
   const m = mealsCache[mealId];
   if (!m) return;
   editingMealId = mealId;
+  editMealPer100 = null;
 
-  setVal('mealTime', m.meal_time || 'snack');
-  setVal('mealName', m.name);
+  // Try to find per-100g values in food_items first; fall back to deriving from meal values
+  if (m.name) {
+    try {
+      const foods = await api.getFoods(USER_ID, m.name);
+      if (foods.length) editMealPer100 = foods[0];
+    } catch (_) {}
+  }
+  if (!editMealPer100 && m.quantity_g > 0) {
+    const q = m.quantity_g;
+    editMealPer100 = {
+      calories_per_100g: (m.calories  || 0) * 100 / q,
+      protein_per_100g:  (m.protein_g || 0) * 100 / q,
+      carbs_per_100g:    (m.carbs_g   || 0) * 100 / q,
+      fat_per_100g:      (m.fat_g     || 0) * 100 / q,
+      fiber_per_100g:    (m.fiber_g   || 0) * 100 / q,
+    };
+  }
+
+  setVal('mealTime',     m.meal_time || 'snack');
+  setVal('mealName',     m.name);
   setVal('mealCalories', m.calories);
-  setVal('mealProtein', m.protein_g);
-  setVal('mealCarbs', m.carbs_g);
-  setVal('mealFat', m.fat_g);
-  setVal('mealFiber', m.fiber_g);
+  setVal('mealProtein',  m.protein_g);
+  setVal('mealCarbs',    m.carbs_g);
+  setVal('mealFat',      m.fat_g);
+  setVal('mealFiber',    m.fiber_g);
   setVal('mealQuantity', m.quantity_g != null ? m.quantity_g : '');
-  setVal('mealNotes', m.notes || '');
+  setVal('mealNotes',    m.notes || '');
 
   const details = document.getElementById('mealNutriDetails');
   if (details) details.open = true;
-
   const header = document.querySelector('#modalMeal .modal-header h3');
   if (header) header.textContent = 'Modifica pasto';
 
+  _resetMealSaveBtn();
   openModal('modalMeal');
 }
 
 function openAddMealModal() {
   editingMealId = null;
+  editMealPer100 = null;
   setVal('mealTime', 'snack');
   ['mealName','mealCalories','mealProtein','mealCarbs','mealFat','mealFiber','mealQuantity','mealNotes']
     .forEach(id => setVal(id, ''));
@@ -800,7 +823,26 @@ function openAddMealModal() {
   if (details) details.open = false;
   const header = document.querySelector('#modalMeal .modal-header h3');
   if (header) header.textContent = 'Aggiungi pasto';
+  _resetMealSaveBtn();
   openModal('modalMeal');
+}
+
+function _resetMealSaveBtn() {
+  const btn = document.getElementById('mealSaveBtn');
+  if (btn) { btn.disabled = false; btn.textContent = 'Salva'; }
+}
+
+function recalcMealFromQuantity() {
+  if (!editMealPer100 || !editingMealId) return;
+  const qty = parseFloat(getVal('mealQuantity'));
+  if (!qty || qty <= 0) return;
+  const f = qty / 100;
+  const round1 = v => Math.round((v || 0) * f * 10) / 10;
+  setVal('mealCalories', round1(editMealPer100.calories_per_100g));
+  setVal('mealProtein',  round1(editMealPer100.protein_per_100g));
+  setVal('mealCarbs',    round1(editMealPer100.carbs_per_100g));
+  setVal('mealFat',      round1(editMealPer100.fat_per_100g));
+  setVal('mealFiber',    round1(editMealPer100.fiber_per_100g));
 }
 
 // ─── Edit attività ────────────────────────────────────────────────

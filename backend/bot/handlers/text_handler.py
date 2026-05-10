@@ -172,24 +172,61 @@ async def dispatch_message(
 
         else:
             # Pasto (meal o general) — analisi nutrizionale dettagliata
-            from backend.services.food_service import lookup_food_item, calculate_for_quantity, upsert_food_item
+            from backend.services.food_service import (
+                clean_food_name, extract_quantity_g,
+                lookup_food_item, calculate_for_quantity, upsert_food_item,
+            )
+
+            meal_time = _extract_meal_time(text) or "snack"
+
+            # ── Step 1: try food_items BEFORE calling Claude ────────────
+            candidate_name = clean_food_name(text)
+            candidate_qty  = extract_quantity_g(text) or 100.0
+            fi = lookup_food_item(db, user_id, candidate_name) if candidate_name else None
+
+            if fi:
+                vals = calculate_for_quantity(fi, candidate_qty)
+                db.table("meals").insert({
+                    "user_id":   user_id,
+                    "meal_date": date.today().isoformat(),
+                    "meal_time": meal_time,
+                    "name":      fi["name"],
+                    "calories":  vals["calories"],
+                    "protein_g": vals["protein_g"],
+                    "carbs_g":   vals["carbs_g"],
+                    "fat_g":     vals["fat_g"],
+                    "fiber_g":   vals["fiber_g"],
+                    "notes":     text,
+                    "source":    source,
+                }).execute()
+                reply = (
+                    f"📂 *{fi['name']}* ({candidate_qty}g)\n\n"
+                    f"📊 *Valori dal database personale:*\n"
+                    f"🔥 Calorie: `{vals['calories']} kcal`\n"
+                    f"💪 Proteine: `{vals['protein_g']}g`\n"
+                    f"🌾 Carboidrati: `{vals['carbs_g']}g`\n"
+                    f"🫒 Grassi: `{vals['fat_g']}g`\n"
+                )
+                await update.message.reply_text(reply, parse_mode="Markdown")
+                return  # skip Claude entirely
+
+            # ── Step 2: Claude analysis (food not in personal DB) ───────
             result = analyze_food_text(text)
             meal_time = _extract_meal_time(text) or result.get("meal_time") or "snack"
             meal_name = result.get("meal_name", text[:50])
             items = result.get("items", [])
 
-            # Enhance each item with personal food database values when available
+            # Override Claude's values with food_items where item names match
             db_hits: list[str] = []
             for item in items:
                 item_name = item.get("name", "")
                 qty = float(item.get("quantity_g") or 0)
                 if not item_name or qty <= 0:
                     continue
-                fi = lookup_food_item(db, user_id, item_name)
-                if fi:
-                    vals = calculate_for_quantity(fi, qty)
-                    item.update(vals)
-                    db_hits.append(fi["name"])
+                item_fi = lookup_food_item(db, user_id, item_name)
+                if item_fi:
+                    item.update(calculate_for_quantity(item_fi, qty))
+                    db_hits.append(item_fi["name"])
 
             if db_hits:
                 total_cal   = sum(i.get("calories", 0) for i in items)
@@ -218,8 +255,7 @@ async def dispatch_message(
                 "source":    source,
             }).execute()
 
-            # Auto-save each item that has a quantity to the personal food database.
-            # Skip items whose values were already sourced from food_items (db_hits).
+            # Auto-save each item to food_items when values come from Claude
             if not db_hits:
                 for item in items:
                     item_name = item.get("name", "")
