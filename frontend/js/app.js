@@ -882,18 +882,6 @@ async function saveMeal() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Salvataggio...'; }
 
   try {
-    if (!editingMealId && data.calories === 0) {
-      if (btn) btn.textContent = '⏳ Stima calorie...';
-      try {
-        const est = await api.estimateMeal(name, data.quantity_g);
-        data.calories  = est.calories  || 0;
-        data.protein_g = est.protein_g || 0;
-        data.carbs_g   = est.carbs_g   || 0;
-        data.fat_g     = est.fat_g     || 0;
-        data.fiber_g   = est.fiber_g   || 0;
-      } catch (_) {}
-    }
-
     if (editingMealId) {
       await api.updateMeal(editingMealId, data);
     } else {

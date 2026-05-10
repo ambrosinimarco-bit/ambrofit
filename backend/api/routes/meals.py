@@ -19,6 +19,21 @@ def list_meals(user_id: str, meal_date: date | None = None):
 
 @router.post("/")
 def create_meal(meal: MealCreate):
+    if not meal.calories:
+        from backend.services.claude_service import analyze_food_text
+        text = f"{int(meal.quantity_g)}g di {meal.name}" if meal.quantity_g else meal.name
+        try:
+            est = analyze_food_text(text)
+            meal = meal.model_copy(update={
+                "calories":  est.get("total_calories", 0),
+                "protein_g": est.get("total_protein_g", 0),
+                "carbs_g":   est.get("total_carbs_g", 0),
+                "fat_g":     est.get("total_fat_g", 0),
+                "fiber_g":   est.get("total_fiber_g", 0),
+            })
+        except Exception:
+            pass
+
     db = get_supabase()
     result = db.table("meals").insert(meal.model_dump(mode="json")).execute()
     if not result.data:
