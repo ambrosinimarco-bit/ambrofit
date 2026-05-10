@@ -172,11 +172,16 @@ function renderWeeklyActivities(days) {
 // ─── Nutrition ────────────────────────────────────────────────────
 async function loadNutrition() {
   if (!USER_ID) return;
-  const meals = await api.getMeals(USER_ID, nutritionDate).catch(() => []);
-  renderMealGroups(meals);
+  const [meals, foods] = await Promise.all([
+    api.getMeals(USER_ID, nutritionDate).catch(() => []),
+    api.getFoods(USER_ID).catch(() => []),
+  ]);
+  const foodByName = {};
+  foods.forEach(f => { if (f.name) foodByName[f.name.toLowerCase()] = f; });
+  renderMealGroups(meals, foodByName);
 }
 
-function renderMealGroups(meals) {
+function renderMealGroups(meals, foodByName = {}) {
   const groups = { breakfast: [], lunch: [], dinner: [], snack: [] };
   const labels = { breakfast: '🌅 Colazione', lunch: '☀️ Pranzo', dinner: '🌙 Cena', snack: '🍎 Spuntini' };
 
@@ -197,19 +202,24 @@ function renderMealGroups(meals) {
           <span>${labels[key]}</span>
           <span>${Math.round(totalCal)} kcal</span>
         </div>
-        ${items.map(m => `
+        ${items.map(m => {
+          const fi = foodByName[m.name?.toLowerCase()];
+          const per100Row = fi ? `
+            <div class="meal-item-per100">per 100g: ${fi.calories_per_100g ?? '–'} kcal · P:${fi.protein_per_100g ?? '–'}g · C:${fi.carbs_per_100g ?? '–'}g · G:${fi.fat_per_100g ?? '–'}g</div>
+          ` : '';
+          return `
           <div class="meal-item">
             <div style="flex:1">
               <div class="meal-item-name">${esc(m.name)}</div>
-              <div class="meal-item-macros">P: ${m.protein_g}g · C: ${m.carbs_g}g · G: ${m.fat_g}g${m.quantity_g ? ' · ' + m.quantity_g + 'g' : ''}</div>
+              <div class="meal-item-macros">${Math.round(m.calories)} kcal · P:${m.protein_g}g · C:${m.carbs_g}g · G:${m.fat_g}g${m.quantity_g ? ' · ' + m.quantity_g + 'g' : ''}</div>
+              ${per100Row}
             </div>
             <div style="display:flex;align-items:center;gap:.4rem">
-              <span class="meal-item-cals">${Math.round(m.calories)} kcal</span>
               <button class="meal-delete" onclick="openEditMealModal('${m.id}')" title="Modifica">✏️</button>
               <button class="meal-delete" onclick="deleteMeal('${m.id}')" title="Elimina">🗑</button>
             </div>
           </div>
-        `).join('')}
+        `}).join('')}
       </div>
     `;
   }).join('');

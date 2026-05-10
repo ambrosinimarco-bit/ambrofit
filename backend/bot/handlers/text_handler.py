@@ -213,8 +213,12 @@ async def dispatch_message(
             # ── Step 2: Claude analysis (food not in personal DB) ───────
             result = analyze_food_text(text)
             meal_time = _extract_meal_time(text) or result.get("meal_time") or "snack"
-            meal_name = result.get("meal_name", text[:50])
             items = result.get("items", [])
+            # Prefer item name for single-food messages (already clean: "Piada Riminese La Spessa")
+            if len(items) == 1 and items[0].get("name"):
+                meal_name = items[0]["name"]
+            else:
+                meal_name = result.get("meal_name") or text[:50]
 
             # Override Claude's values with food_items where item names match
             db_hits: list[str] = []
