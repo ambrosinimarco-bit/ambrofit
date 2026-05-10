@@ -490,7 +490,7 @@
   <!-- ── MODALS ── -->
   <div class="modal-overlay" id="modalOverlay" onclick="closeModal()"></div>
 
-  <!-- Add Meal Modal -->
+  <!-- Add / Edit Meal Modal -->
   <div class="modal" id="modalMeal">
     <div class="modal-header"><h3>Aggiungi pasto</h3><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
@@ -502,22 +502,27 @@
           <option value="snack">Spuntino</option>
         </select>
       </div>
-      <div class="form-group"><label>Nome</label><input type="text" id="mealName" placeholder="es. Pasta al pomodoro" /></div>
-      <div class="form-row">
-        <div class="form-group"><label>Calorie (kcal)</label><input type="number" id="mealCalories" placeholder="400" /></div>
-        <div class="form-group"><label>Quantità (g)</label><input type="number" id="mealQuantity" placeholder="200" /></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Proteine (g)</label><input type="number" id="mealProtein" placeholder="15" /></div>
-        <div class="form-group"><label>Carbs (g)</label><input type="number" id="mealCarbs" placeholder="60" /></div>
-        <div class="form-group"><label>Grassi (g)</label><input type="number" id="mealFat" placeholder="8" /></div>
-        <div class="form-group"><label>Fibre (g)</label><input type="number" id="mealFiber" placeholder="3" /></div>
-      </div>
-      <div class="form-group"><label>Note</label><input type="text" id="mealNotes" placeholder="opzionale" /></div>
+      <div class="form-group"><label>Alimento *</label><input type="text" id="mealName" placeholder="es. Pasta al pomodoro" /></div>
+      <div class="form-group"><label>Quantità (g)</label><input type="number" id="mealQuantity" placeholder="es. 200" /></div>
+      <details id="mealNutriDetails" style="margin-top:.5rem">
+        <summary style="cursor:pointer;color:var(--text2);font-size:.85rem;padding:.4rem 0;user-select:none">
+          Dettagli nutrizionali (opzionale — stimati automaticamente se vuoti)
+        </summary>
+        <div style="margin-top:.75rem">
+          <div class="form-group"><label>Calorie (kcal)</label><input type="number" id="mealCalories" placeholder="400" /></div>
+          <div class="form-row">
+            <div class="form-group"><label>Proteine (g)</label><input type="number" id="mealProtein" placeholder="15" /></div>
+            <div class="form-group"><label>Carbs (g)</label><input type="number" id="mealCarbs" placeholder="60" /></div>
+            <div class="form-group"><label>Grassi (g)</label><input type="number" id="mealFat" placeholder="8" /></div>
+            <div class="form-group"><label>Fibre (g)</label><input type="number" id="mealFiber" placeholder="3" /></div>
+          </div>
+        </div>
+      </details>
+      <div class="form-group" style="margin-top:.5rem"><label>Note</label><input type="text" id="mealNotes" placeholder="opzionale" /></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
-      <button class="btn btn-primary" onclick="saveMeal()">Salva</button>
+      <button class="btn btn-primary" id="mealSaveBtn" onclick="saveMeal()">Salva</button>
     </div>
   </div>
 

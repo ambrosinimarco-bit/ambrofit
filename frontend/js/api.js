@@ -30,6 +30,7 @@ const api = {
   addMeal:        (data) => apiFetch('/api/meals/', { method: 'POST', body: data }),
   updateMeal:     (id, data) => apiFetch(`/api/meals/${id}`, { method: 'PUT', body: data }),
   deleteMeal:     (id) => apiFetch(`/api/meals/${id}`, { method: 'DELETE' }),
+  estimateMeal:   (name, quantity_g) => apiFetch('/api/meals/estimate', { method: 'POST', body: { name, quantity_g: quantity_g || null } }),
 
   // Activities
   getActivities:  (uid, days=7) => apiFetch(`/api/activities/?user_id=${uid}&days=${days}`),

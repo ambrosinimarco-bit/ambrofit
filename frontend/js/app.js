@@ -779,8 +779,11 @@ function openEditMealModal(mealId) {
   setVal('mealCarbs', m.carbs_g);
   setVal('mealFat', m.fat_g);
   setVal('mealFiber', m.fiber_g);
-  setVal('mealQuantity', m.quantity_g || '');
+  setVal('mealQuantity', m.quantity_g != null ? m.quantity_g : '');
   setVal('mealNotes', m.notes || '');
+
+  const details = document.getElementById('mealNutriDetails');
+  if (details) details.open = true;
 
   const header = document.querySelector('#modalMeal .modal-header h3');
   if (header) header.textContent = 'Modifica pasto';
@@ -793,6 +796,8 @@ function openAddMealModal() {
   setVal('mealTime', 'snack');
   ['mealName','mealCalories','mealProtein','mealCarbs','mealFat','mealFiber','mealQuantity','mealNotes']
     .forEach(id => setVal(id, ''));
+  const details = document.getElementById('mealNutriDetails');
+  if (details) details.open = false;
   const header = document.querySelector('#modalMeal .modal-header h3');
   if (header) header.textContent = 'Aggiungi pasto';
   openModal('modalMeal');
@@ -853,11 +858,17 @@ function openAddModal() {
 function openAdjustPlanModal() { openModal('modalAdjustPlan'); }
 
 async function saveMeal() {
+  const name = getVal('mealName');
+  if (!name) { alert('Inserisci il nome del pasto'); return; }
+
+  const btn = document.getElementById('mealSaveBtn');
+  const origText = btn?.textContent;
+
   const data = {
     user_id: USER_ID,
     meal_date: nutritionDate,
     meal_time: getVal('mealTime') || 'snack',
-    name: getVal('mealName'),
+    name,
     calories: parseFloat(getVal('mealCalories')) || 0,
     protein_g: parseFloat(getVal('mealProtein')) || 0,
     carbs_g: parseFloat(getVal('mealCarbs')) || 0,
@@ -867,16 +878,35 @@ async function saveMeal() {
     notes: getVal('mealNotes'),
     source: editingMealId ? (mealsCache[editingMealId]?.source || 'manual') : 'manual',
   };
-  if (!data.name) { alert('Inserisci il nome del pasto'); return; }
-  if (editingMealId) {
-    await api.updateMeal(editingMealId, data);
-  } else {
-    await api.addMeal(data);
+
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Salvataggio...'; }
+
+  try {
+    if (!editingMealId && data.calories === 0) {
+      if (btn) btn.textContent = '⏳ Stima calorie...';
+      try {
+        const est = await api.estimateMeal(name, data.quantity_g);
+        data.calories  = est.calories  || 0;
+        data.protein_g = est.protein_g || 0;
+        data.carbs_g   = est.carbs_g   || 0;
+        data.fat_g     = est.fat_g     || 0;
+        data.fiber_g   = est.fiber_g   || 0;
+      } catch (_) {}
+    }
+
+    if (editingMealId) {
+      await api.updateMeal(editingMealId, data);
+    } else {
+      await api.addMeal(data);
+    }
+    editingMealId = null;
+    closeModal();
+    loadNutrition();
+    loadOverview();
+  } catch (e) {
+    alert('Errore nel salvataggio: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
-  editingMealId = null;
-  closeModal();
-  loadNutrition();
-  loadOverview();
 }
 
 async function saveActivity() {
