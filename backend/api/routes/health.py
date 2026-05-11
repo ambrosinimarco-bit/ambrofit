@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException
+import logging
+from fastapi import APIRouter, HTTPException, Request
 from datetime import date, datetime
 from typing import Optional
 from pydantic import BaseModel
@@ -6,35 +7,43 @@ from backend.database.client import get_supabase
 from backend.database.models import DailyHealthCreate, DailyHealthOut
 
 router = APIRouter(prefix="/api/health", tags=["health"])
+logger = logging.getLogger(__name__)
 
 
 class IOSHealthSync(BaseModel):
     user_id: str
-    active_calories: Optional[int] = None
-    total_calories: Optional[int] = None
+    calories: Optional[int] = None           # calorie attive (movimento + sport)
+    resting_calories: Optional[int] = None   # calorie a riposo (BMR)
     steps: Optional[int] = None
-    timestamp: Optional[str] = None  # ISO 8601, e.g. "2026-05-10T16:00:00"
+    timestamp: Optional[str] = None          # ISO 8601, e.g. "2026-05-10T16:00:00"
 
 
 @router.post("/sync-calories")
-def sync_ios_calories(payload: IOSHealthSync):
+async def sync_ios_calories(payload: IOSHealthSync, request: Request):
     """Receive health data from iOS Shortcuts and update daily_health."""
+    raw_body = await request.body()
+    logger.info("[sync-calories] raw body: %s", raw_body.decode())
+    logger.info("[sync-calories] parsed: user_id=%s calories=%s resting_calories=%s steps=%s timestamp=%s",
+                payload.user_id, payload.calories, payload.resting_calories, payload.steps, payload.timestamp)
+
     db = get_supabase()
 
-    # Derive the health date from timestamp, fall back to today
+    health_date = date.today().isoformat()
     if payload.timestamp:
         try:
             health_date = datetime.fromisoformat(payload.timestamp).date().isoformat()
         except ValueError:
-            health_date = date.today().isoformat()
-    else:
-        health_date = date.today().isoformat()
+            logger.warning("[sync-calories] invalid timestamp %r, using today", payload.timestamp)
 
     update_fields: dict = {}
-    if payload.total_calories is not None:
-        update_fields["total_calories_iphone"] = payload.total_calories
+    if payload.calories is not None and payload.resting_calories is not None:
+        update_fields["total_calories_iphone"] = payload.calories + payload.resting_calories
+    elif payload.calories is not None:
+        update_fields["total_calories_iphone"] = payload.calories
     if payload.steps is not None:
         update_fields["steps"] = payload.steps
+
+    logger.info("[sync-calories] update_fields=%s date=%s", update_fields, health_date)
 
     if not update_fields:
         return {"status": "ok", "message": "nessun dato da aggiornare"}
@@ -54,7 +63,13 @@ def sync_ios_calories(payload: IOSHealthSync):
     else:
         db.table("daily_health").insert(row).execute()
 
-    return {"status": "ok", "message": "dati aggiornati", "date": health_date}
+    return {
+        "status": "ok",
+        "message": "dati aggiornati",
+        "date": health_date,
+        "total_calories_iphone": update_fields.get("total_calories_iphone"),
+        "steps": update_fields.get("steps"),
+    }
 
 
 @router.get("/")
