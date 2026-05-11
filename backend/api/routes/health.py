@@ -22,9 +22,12 @@ class IOSHealthSync(BaseModel):
 async def sync_ios_calories(payload: IOSHealthSync, request: Request):
     """Receive health data from iOS Shortcuts and update daily_health."""
     raw_body = await request.body()
-    logger.info("[sync-calories] raw body: %s", raw_body.decode())
-    logger.info("[sync-calories] parsed: user_id=%s calories=%s resting_calories=%s steps=%s timestamp=%s",
-                payload.user_id, payload.calories, payload.resting_calories, payload.steps, payload.timestamp)
+    raw_str = raw_body.decode()
+    print(f"[sync-calories] RAW BODY: {raw_str}", flush=True)
+    print(f"[sync-calories] calories      = {payload.calories!r}  (type: {type(payload.calories).__name__})", flush=True)
+    print(f"[sync-calories] resting_cal   = {payload.resting_calories!r}  (type: {type(payload.resting_calories).__name__})", flush=True)
+    print(f"[sync-calories] steps         = {payload.steps!r}", flush=True)
+    print(f"[sync-calories] timestamp     = {payload.timestamp!r}", flush=True)
 
     db = get_supabase()
 
@@ -33,17 +36,20 @@ async def sync_ios_calories(payload: IOSHealthSync, request: Request):
         try:
             health_date = datetime.fromisoformat(payload.timestamp).date().isoformat()
         except ValueError:
-            logger.warning("[sync-calories] invalid timestamp %r, using today", payload.timestamp)
+            print(f"[sync-calories] WARNING: invalid timestamp {payload.timestamp!r}, using today", flush=True)
 
     update_fields: dict = {}
     if payload.calories is not None and payload.resting_calories is not None:
-        update_fields["total_calories_iphone"] = payload.calories + payload.resting_calories
+        total = payload.calories + payload.resting_calories
+        print(f"[sync-calories] CALC: {payload.calories} + {payload.resting_calories} = {total}", flush=True)
+        update_fields["total_calories_iphone"] = total
     elif payload.calories is not None:
+        print(f"[sync-calories] CALC: only calories={payload.calories} (no resting_calories)", flush=True)
         update_fields["total_calories_iphone"] = payload.calories
     if payload.steps is not None:
         update_fields["steps"] = payload.steps
 
-    logger.info("[sync-calories] update_fields=%s date=%s", update_fields, health_date)
+    print(f"[sync-calories] update_fields={update_fields}  date={health_date}", flush=True)
 
     if not update_fields:
         return {"status": "ok", "message": "nessun dato da aggiornare"}
