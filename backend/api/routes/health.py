@@ -1,9 +1,60 @@
 from fastapi import APIRouter, HTTPException
-from datetime import date
+from datetime import date, datetime
+from typing import Optional
+from pydantic import BaseModel
 from backend.database.client import get_supabase
 from backend.database.models import DailyHealthCreate, DailyHealthOut
 
 router = APIRouter(prefix="/api/health", tags=["health"])
+
+
+class IOSHealthSync(BaseModel):
+    user_id: str
+    active_calories: Optional[int] = None
+    total_calories: Optional[int] = None
+    steps: Optional[int] = None
+    timestamp: Optional[str] = None  # ISO 8601, e.g. "2026-05-10T16:00:00"
+
+
+@router.post("/sync-calories")
+def sync_ios_calories(payload: IOSHealthSync):
+    """Receive health data from iOS Shortcuts and update daily_health."""
+    db = get_supabase()
+
+    # Derive the health date from timestamp, fall back to today
+    if payload.timestamp:
+        try:
+            health_date = datetime.fromisoformat(payload.timestamp).date().isoformat()
+        except ValueError:
+            health_date = date.today().isoformat()
+    else:
+        health_date = date.today().isoformat()
+
+    update_fields: dict = {}
+    if payload.total_calories is not None:
+        update_fields["total_calories_iphone"] = payload.total_calories
+    if payload.steps is not None:
+        update_fields["steps"] = payload.steps
+
+    if not update_fields:
+        return {"status": "ok", "message": "nessun dato da aggiornare"}
+
+    existing = (
+        db.table("daily_health")
+        .select("id")
+        .eq("user_id", payload.user_id)
+        .eq("health_date", health_date)
+        .limit(1)
+        .execute()
+    )
+
+    row = {"user_id": payload.user_id, "health_date": health_date, **update_fields}
+    if existing.data:
+        db.table("daily_health").update(update_fields).eq("id", existing.data[0]["id"]).execute()
+    else:
+        db.table("daily_health").insert(row).execute()
+
+    return {"status": "ok", "message": "dati aggiornati", "date": health_date}
 
 
 @router.get("/")
