@@ -25,6 +25,11 @@ async def sync_ios_calories(payload: IOSHealthSync, request: Request):
     print(f"[sync-calories] RAW BODY: {raw_body.decode()}", flush=True)
     print(f"[sync-calories] active_calories={payload.active_calories!r}  resting_calories={payload.resting_calories!r}  steps={payload.steps!r}  timestamp={payload.timestamp!r}", flush=True)
 
+    _MAX_KCAL = 5000
+    for field, value in [("active_calories", payload.active_calories), ("resting_calories", payload.resting_calories)]:
+        if value is not None and value > _MAX_KCAL:
+            raise HTTPException(status_code=400, detail=f"{field} fuori range: {value} (max {_MAX_KCAL} kcal)")
+
     db = get_supabase()
 
     health_date = date.today().isoformat()
