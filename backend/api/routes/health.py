@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 
 class IOSHealthSync(BaseModel):
     user_id: str
-    calories: Optional[int] = None           # calorie attive (movimento + sport)
-    resting_calories: Optional[int] = None   # calorie a riposo (BMR)
+    calories: Optional[float] = None           # calorie attive (movimento + sport)
+    resting_calories: Optional[float] = None   # calorie a riposo (BMR)
     steps: Optional[int] = None
     timestamp: Optional[str] = None          # ISO 8601, e.g. "2026-05-10T16:00:00"
 
@@ -40,12 +40,12 @@ async def sync_ios_calories(payload: IOSHealthSync, request: Request):
 
     update_fields: dict = {}
     if payload.calories is not None and payload.resting_calories is not None:
-        total = payload.calories + payload.resting_calories
+        total = round(payload.calories + payload.resting_calories)
         print(f"[sync-calories] CALC: {payload.calories} + {payload.resting_calories} = {total}", flush=True)
         update_fields["total_calories_iphone"] = total
     elif payload.calories is not None:
         print(f"[sync-calories] CALC: only calories={payload.calories} (no resting_calories)", flush=True)
-        update_fields["total_calories_iphone"] = payload.calories
+        update_fields["total_calories_iphone"] = round(payload.calories)
     if payload.steps is not None:
         update_fields["steps"] = payload.steps
 
