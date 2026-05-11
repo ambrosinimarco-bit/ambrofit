@@ -1707,7 +1707,7 @@ async function loadFoodDB() {
 function renderFoodItems(items) {
   const container = document.getElementById('foodItemsList');
   if (!items.length) {
-    container.innerHTML = '<p style="color:var(--text2);font-size:.85rem">Nessun alimento salvato. Vengono aggiunti automaticamente quando inserisci pasti con nome + quantità.</p>';
+    container.innerHTML = '<p style="color:var(--text2);font-size:.85rem">Nessun alimento nei preferiti. Quando inserisci un pasto, premi ⭐ per salvarlo qui.</p>';
     return;
   }
   container.innerHTML = items.map(f => `

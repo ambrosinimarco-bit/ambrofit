@@ -116,31 +116,47 @@ def lookup_food_item(db, user_id: str, query: str) -> dict | None:
         return None
 
 
-def lookup_food_item_fuzzy(db, user_id: str, query: str) -> dict | None:
-    """Fuzzy lookup: substring match first, then all-significant-words match.
+def _word_similarity(query: str, name: str) -> float:
+    """Query-coverage score: fraction of query tokens (len≥3) found in name."""
+    import re as _re
+    def _tokens(s: str) -> set[str]:
+        s = _re.sub(r"['‘’`’]", " ", s.lower())
+        return {w for w in _re.split(r"[\s\-/,\.]+", s) if len(w) >= 3}
+    q_toks = _tokens(query)
+    n_toks = _tokens(name)
+    if not q_toks:
+        return 0.0
+    return len(q_toks & n_toks) / len(q_toks)
 
+
+def lookup_food_item_fuzzy(db, user_id: str, query: str, min_similarity: float = 0.6) -> dict | None:
+    """Fuzzy lookup with similarity threshold.
+
+    1. Direct substring match (always returned if found).
+    2. Word-coverage similarity ≥ min_similarity (default 0.6).
     Allows "fiocchi avena" to find "Fiocchi d'Avena Coop".
     """
     if not query:
         return None
     try:
         q = query.strip()
-        # 1. Direct substring
+        # 1. Direct substring match
         res = db.table("food_items").select("*") \
             .eq("user_id", user_id).ilike("name", f"%{q}%") \
             .order("name").limit(1).execute()
         if res.data:
             return res.data[0]
-        # 2. All words (len ≥ 3) present anywhere in the name (order-independent)
-        words = [w for w in q.lower().split() if len(w) >= 3]
-        if len(words) >= 2:
-            all_items = db.table("food_items").select("*") \
-                .eq("user_id", user_id).execute()
-            for item in (all_items.data or []):
-                name_lower = item["name"].lower()
-                if all(w in name_lower for w in words):
-                    return item
-        return None
+        # 2. Word-coverage similarity across all items
+        all_items = db.table("food_items").select("*").eq("user_id", user_id).execute()
+        best_item, best_score = None, 0.0
+        for item in (all_items.data or []):
+            # Also try reverse: name is a substring of query
+            if item["name"].lower() in q.lower():
+                return item
+            score = _word_similarity(q, item["name"])
+            if score > best_score:
+                best_score, best_item = score, item
+        return best_item if best_score >= min_similarity else None
     except Exception:
         return None
 

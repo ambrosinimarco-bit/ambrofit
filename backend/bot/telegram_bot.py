@@ -1,5 +1,6 @@
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     MessageHandler,
     filters,
@@ -22,6 +23,7 @@ from backend.bot.handlers.command_handler import (
 from backend.bot.handlers.text_handler import handle_text
 from backend.bot.handlers.photo_handler import handle_photo
 from backend.bot.handlers.voice_handler import handle_voice
+from backend.bot.handlers.callback_handler import handle_callback
 
 settings = get_settings()
 
@@ -42,6 +44,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("aiuto", cmd_help))
     app.add_handler(CommandHandler("alimenti", cmd_alimenti))
 
+    app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))

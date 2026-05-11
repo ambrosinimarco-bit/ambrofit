@@ -103,8 +103,47 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             quantity = _extract_quantity(caption)
             user_name = _extract_food_name_from_caption(caption)
             result = await asyncio.to_thread(analyze_nutrition_label, image_bytes, quantity)
-            _save_label_meal(db, user_id, result, quantity, user_name)
-            await update.message.reply_text(_format_label_reply(result, quantity, user_name), parse_mode="Markdown")
+            meal_id = _save_label_meal(db, user_id, result, quantity, user_name)
+
+            per_100 = result.get("per_100g", {})
+            per_qty = result.get("per_quantity", {})
+            product_name = user_name or result.get("product_name", "Prodotto da etichetta")
+
+            if context and meal_id and per_100.get("calories"):
+                from datetime import datetime
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+                context.user_data["meal_interaction"] = {
+                    "type":       "save_or_skip",
+                    "ts":         datetime.now().timestamp(),
+                    "meal_id":    meal_id,
+                    "meal_name":  product_name,
+                    "item_name":  product_name,
+                    "item_brand": result.get("brand"),
+                    "item_qty":   quantity,
+                    "macros": {
+                        "calories":  per_qty.get("calories", 0),
+                        "protein_g": per_qty.get("protein_g", 0),
+                        "carbs_g":   per_qty.get("carbs_g", 0),
+                        "fat_g":     per_qty.get("fat_g", 0),
+                        "fiber_g":   per_qty.get("fiber_g", 0),
+                    },
+                    "per_100g": per_100,
+                    "source": "telegram_label",
+                }
+                keyboard = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("⭐ Salva preferito", callback_data=f"save_food_{meal_id}"),
+                    InlineKeyboardButton("❌ No grazie",        callback_data="skip_food"),
+                ]])
+                await update.message.reply_text(
+                    _format_label_reply(result, quantity, user_name),
+                    parse_mode="Markdown",
+                    reply_markup=keyboard,
+                )
+            else:
+                await update.message.reply_text(
+                    _format_label_reply(result, quantity, user_name),
+                    parse_mode="Markdown",
+                )
 
         else:
             await update.message.reply_text("📸 Sto analizzando la foto...")
@@ -139,12 +178,11 @@ def _save_label_meal(
     result: dict,
     quantity: float,
     user_name: str | None = None,
-):
+) -> str | None:
     per_qty = result.get("per_quantity", {})
-    per_100 = result.get("per_100g", {})
     # User-declared name takes absolute priority over Claude's label recognition
     product_name = user_name or result.get("product_name", "Prodotto da etichetta")
-    db.table("meals").insert({
+    res = db.table("meals").insert({
         "user_id": user_id,
         "meal_date": date.today().isoformat(),
         "meal_time": "snack",
@@ -157,18 +195,7 @@ def _save_label_meal(
         "quantity_g": quantity,
         "source": "telegram_label",
     }).execute()
-
-    # Save to personal food database using per-100g values from the label
-    if per_100 and per_100.get("calories"):
-        from backend.services.food_service import upsert_food_item
-        upsert_food_item(
-            db, user_id, product_name, "foto_etichetta",
-            calories_per_100g=per_100.get("calories"),
-            protein_per_100g=per_100.get("protein_g"),
-            carbs_per_100g=per_100.get("carbs_g"),
-            fat_per_100g=per_100.get("fat_g"),
-            fiber_per_100g=per_100.get("fiber_g"),
-        )
+    return res.data[0]["id"] if res.data else None
 
 
 def _save_garmin_data(db, user_id: str, result: dict) -> str | None:

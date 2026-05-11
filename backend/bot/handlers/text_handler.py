@@ -1,8 +1,8 @@
 import asyncio
 import io
 import re
-from datetime import date
-from telegram import Update
+from datetime import date, datetime
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from backend.services.claude_service import analyze_food_text, analyze_voice_transcript
 from backend.database.client import get_supabase
@@ -12,7 +12,7 @@ from backend.bot.handlers.command_handler import get_or_create_user
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = await get_or_create_user(update)
     text = update.message.text.strip()
-    _pending_keys = ("pending_meal", "pending_delete_meal", "pending_delete_food")
+    _pending_keys = ("pending_delete_meal", "pending_delete_food")
     if not any(context.user_data.get(k) for k in _pending_keys):
         await update.message.reply_text("Sto analizzando il messaggio...")
     await dispatch_message(update, context, user_id, text, source="telegram_text")
@@ -71,40 +71,6 @@ def _quick_classify(text: str) -> str | None:
     return None
 
 
-def _save_pending_meal(db, user_id: str, pending: dict) -> None:
-    """Persist a confirmed pending meal to meals + food_items."""
-    from backend.services.food_service import upsert_food_item
-    name = pending["name"]
-    brand = pending.get("brand") or ""
-    # Combined display name: "Stracchino Conad" (avoid doubling if brand already in name)
-    full_name = (f"{name} {brand}".strip() if brand and brand.lower() not in name.lower() else name)
-    qty = pending.get("quantity_g") or 0
-    db.table("meals").insert({
-        "user_id":    user_id,
-        "meal_date":  pending["meal_date"],
-        "meal_time":  pending["meal_time"],
-        "name":       full_name,
-        "calories":   pending["calories"],
-        "protein_g":  pending["protein_g"],
-        "carbs_g":    pending["carbs_g"],
-        "fat_g":      pending["fat_g"],
-        "fiber_g":    pending["fiber_g"],
-        "quantity_g": qty if qty > 0 else None,
-        "notes":      pending["text"],
-        "source":     pending["source"],
-    }).execute()
-    if qty > 0 and pending["calories"]:
-        upsert_food_item(
-            db, user_id, full_name, pending["source"],
-            calories_per_100g=pending["calories"] * 100 / qty,
-            protein_per_100g=(pending["protein_g"] or 0) * 100 / qty or None,
-            carbs_per_100g=(pending["carbs_g"] or 0) * 100 / qty or None,
-            fat_per_100g=(pending["fat_g"] or 0) * 100 / qty or None,
-            fiber_per_100g=(pending["fiber_g"] or 0) * 100 / qty or None,
-            brand=brand or None,
-        )
-
-
 async def dispatch_message(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -114,50 +80,6 @@ async def dispatch_message(
 ) -> None:
     """Classifica il testo (o trascritto vocale) e smista all'azione corretta."""
     try:
-        # ── Handle pending meal confirmation ──────────────────────────
-        pending = context.user_data.get("pending_meal") if context else None
-        if pending:
-            t = text.strip()
-            t_up = t.upper()
-            db_inner = get_supabase()
-            if t_up == "SI":
-                _save_pending_meal(db_inner, user_id, pending)
-                del context.user_data["pending_meal"]
-                full = pending["name"]
-                b = pending.get("brand")
-                if b and b.lower() not in full.lower():
-                    full = f"{full} {b}"
-                await update.message.reply_text(f"✅ Pasto salvato: *{full}*", parse_mode="Markdown")
-            elif t_up.startswith("NOME:"):
-                new_name = t[5:].strip()
-                if new_name:
-                    pending["name"] = new_name
-                    pending.pop("brand", None)
-                    _save_pending_meal(db_inner, user_id, pending)
-                    del context.user_data["pending_meal"]
-                    await update.message.reply_text(f"✅ Pasto salvato con nome: *{new_name}*", parse_mode="Markdown")
-                else:
-                    await update.message.reply_text("Nome vuoto. Rispondi NOME: [nome alimento]")
-            elif t_up.startswith("BRAND:"):
-                new_brand = t[6:].strip()
-                pending["brand"] = new_brand
-                _save_pending_meal(db_inner, user_id, pending)
-                del context.user_data["pending_meal"]
-                await update.message.reply_text(f"✅ Pasto salvato con brand: *{new_brand}*", parse_mode="Markdown")
-            elif t_up == "ANNULLA":
-                del context.user_data["pending_meal"]
-                await update.message.reply_text("❌ Registrazione annullata.")
-            else:
-                await update.message.reply_text(
-                    "Non ho capito. Rispondi:\n"
-                    "✅ *SI* per confermare\n"
-                    "✏️ *NOME: [nuovo nome]* per correggere\n"
-                    "✏️ *BRAND: [brand]* per correggere il brand\n"
-                    "❌ *ANNULLA* per annullare",
-                    parse_mode="Markdown",
-                )
-            return
-
         # ── Handle pending meal deletion confirmation ──────────────────
         pending_dm = context.user_data.get("pending_delete_meal") if context else None
         if pending_dm:
@@ -317,164 +239,110 @@ async def dispatch_message(
             await update.message.reply_text(f"👟 Passi registrati: `{data.get('steps'):,}`", parse_mode="Markdown")
 
         else:
-            # Pasto (meal o general) — analisi nutrizionale dettagliata
-            from backend.services.food_service import (
-                clean_food_name, extract_quantity_g,
-                lookup_food_item_fuzzy, calculate_for_quantity, upsert_food_item,
-            )
+            # ── Pasto — inline-button flow ───────────────────────────────
+            from backend.services.food_service import extract_quantity_g, lookup_food_item_fuzzy
 
-            meal_time = _extract_meal_time(text) or "snack"
-
-            # ── Step 1: fuzzy lookup in food_items BEFORE calling Claude ─
-            candidate_name = clean_food_name(text)
-            candidate_qty  = extract_quantity_g(text) or 100.0
-            fi = lookup_food_item_fuzzy(db, user_id, candidate_name) if candidate_name else None
-
-            if fi:
-                vals = calculate_for_quantity(fi, candidate_qty)
-                db.table("meals").insert({
-                    "user_id":   user_id,
-                    "meal_date": date.today().isoformat(),
-                    "meal_time": meal_time,
-                    "name":      fi["name"],
-                    "calories":  vals["calories"],
-                    "protein_g": vals["protein_g"],
-                    "carbs_g":   vals["carbs_g"],
-                    "fat_g":     vals["fat_g"],
-                    "fiber_g":   vals["fiber_g"],
-                    "notes":     text,
-                    "source":    source,
-                }).execute()
-                reply = (
-                    f"📂 *{fi['name']}* ({candidate_qty}g)\n\n"
-                    f"📊 *Valori dal database personale:*\n"
-                    f"🔥 Calorie: `{vals['calories']} kcal`\n"
-                    f"💪 Proteine: `{vals['protein_g']}g`\n"
-                    f"🌾 Carboidrati: `{vals['carbs_g']}g`\n"
-                    f"🫒 Grassi: `{vals['fat_g']}g`\n"
-                )
-                await update.message.reply_text(reply, parse_mode="Markdown")
-                return  # skip Claude entirely
-
-            # ── Step 2: Claude analysis (food not in personal DB) ───────
-            result = analyze_food_text(text)
+            result    = analyze_food_text(text)
             meal_time = _extract_meal_time(text) or result.get("meal_time") or "snack"
-            items = result.get("items", [])
+            items     = result.get("items", [])
 
-            # Override Claude values with food_items where names fuzzy-match
-            db_hits: list[str] = []
-            for item in items:
-                item_name = item.get("name", "")
-                qty = float(item.get("quantity_g") or 0)
-                if not item_name or qty <= 0:
-                    continue
-                item_fi = lookup_food_item_fuzzy(db, user_id, item_name)
-                if item_fi:
-                    item.update(calculate_for_quantity(item_fi, qty))
-                    db_hits.append(item_fi["name"])
+            if not items:
+                await update.message.reply_text(
+                    "Non ho capito cosa hai mangiato. Puoi essere più specifico?"
+                )
+                return
 
-            if db_hits:
-                total_cal   = sum(i.get("calories", 0) for i in items)
-                total_prot  = sum(i.get("protein_g", 0) for i in items)
-                total_carbs = sum(i.get("carbs_g", 0) for i in items)
-                total_fat   = sum(i.get("fat_g", 0) for i in items)
-                total_fiber = sum(i.get("fiber_g", 0) for i in items)
+            if len(items) == 1:
+                # ── Single food: fuzzy search → inline buttons ───────────
+                item       = items[0]
+                item_name  = item.get("name") or ""
+                item_brand = item.get("brand") or None
+                item_qty   = float(item.get("quantity_g") or 0) or (extract_quantity_g(text) or 100.0)
+                meal_name  = item_name
+                if item_brand and item_brand.lower() not in item_name.lower():
+                    meal_name = f"{item_name} {item_brand}"
+                claude_totals = {
+                    "calories":  item.get("calories", 0),
+                    "protein_g": item.get("protein_g", 0),
+                    "carbs_g":   item.get("carbs_g", 0),
+                    "fat_g":     item.get("fat_g", 0),
+                    "fiber_g":   item.get("fiber_g", 0),
+                }
+                fi = lookup_food_item_fuzzy(db, user_id, item_name or meal_name) if (item_name or meal_name) else None
+
+                if fi:
+                    fi_display = fi["name"] + (f" ({fi['brand']})" if fi.get("brand") else "")
+                    if context:
+                        context.user_data["meal_interaction"] = {
+                            "type": "use_or_new", "ts": datetime.now().timestamp(),
+                            "food_found": fi, "meal_name": meal_name,
+                            "item_name": item_name, "item_brand": item_brand,
+                            "item_qty": item_qty, "meal_time": meal_time,
+                            "source": source, "text": text, "claude_totals": claude_totals,
+                        }
+                    keyboard = InlineKeyboardMarkup([[
+                        InlineKeyboardButton("✅ Usa questo", callback_data=f"use_food_{fi['id']}"),
+                        InlineKeyboardButton("➕ Crea nuovo",  callback_data="new_food"),
+                    ]])
+                    await update.message.reply_text(
+                        f"Ho trovato *{fi_display}* negli Alimenti Preferiti.\n"
+                        f"Usare quello o creare nuovo?",
+                        parse_mode="Markdown", reply_markup=keyboard,
+                    )
+                else:
+                    meal_res = db.table("meals").insert({
+                        "user_id":   user_id, "meal_date": date.today().isoformat(),
+                        "meal_time": meal_time, "name": meal_name,
+                        "calories":  claude_totals["calories"],
+                        "protein_g": claude_totals["protein_g"],
+                        "carbs_g":   claude_totals["carbs_g"],
+                        "fat_g":     claude_totals["fat_g"],
+                        "fiber_g":   claude_totals["fiber_g"],
+                        "quantity_g": item_qty if item_qty > 0 else None,
+                        "notes": text, "source": source,
+                    }).execute()
+                    meal_id = meal_res.data[0]["id"] if meal_res.data else "none"
+                    if context:
+                        context.user_data["meal_interaction"] = {
+                            "type": "save_or_skip", "ts": datetime.now().timestamp(),
+                            "meal_id": meal_id, "meal_name": meal_name,
+                            "item_name": item_name, "item_brand": item_brand,
+                            "item_qty": item_qty, "macros": claude_totals, "source": source,
+                        }
+                    keyboard = InlineKeyboardMarkup([[
+                        InlineKeyboardButton("⭐ Salva preferito", callback_data=f"save_food_{meal_id}"),
+                        InlineKeyboardButton("❌ No grazie", callback_data="skip_food"),
+                    ]])
+                    cal = round(claude_totals.get("calories", 0))
+                    await update.message.reply_text(
+                        f"✅ *{meal_name}* ({cal} kcal) aggiunto\n"
+                        f"Vuoi salvarlo negli *Alimenti Preferiti* per riusarlo?",
+                        parse_mode="Markdown", reply_markup=keyboard,
+                    )
             else:
+                # ── Multi-item meal: save immediately, no buttons ────────
                 total_cal   = result.get("total_calories", 0)
                 total_prot  = result.get("total_protein_g", 0)
                 total_carbs = result.get("total_carbs_g", 0)
                 total_fat   = result.get("total_fat_g", 0)
                 total_fiber = result.get("total_fiber_g", 0)
-
-            # ── Single-item from Claude → ask confirmation ───────────────
-            if len(items) == 1 and not db_hits and context:
-                item = items[0]
-                item_brand = item.get("brand") or None
-                item_name  = item.get("name") or text[:50]
-                qty = float(item.get("quantity_g") or 0)
-                brand_str  = item_brand or "non specificato"
-                context.user_data["pending_meal"] = {
-                    "meal_date":  date.today().isoformat(),
-                    "meal_time":  meal_time,
-                    "name":       item_name,
-                    "brand":      item_brand,
-                    "calories":   total_cal,
-                    "protein_g":  total_prot,
-                    "carbs_g":    total_carbs,
-                    "fat_g":      total_fat,
-                    "fiber_g":    total_fiber,
-                    "quantity_g": qty if qty > 0 else None,
-                    "text":       text,
-                    "source":     source,
-                }
+                meal_name   = result.get("meal_name") or text[:50]
+                db.table("meals").insert({
+                    "user_id":   user_id, "meal_date": date.today().isoformat(),
+                    "meal_time": meal_time, "name": meal_name,
+                    "calories":  total_cal, "protein_g": total_prot,
+                    "carbs_g":   total_carbs, "fat_g": total_fat, "fiber_g": total_fiber,
+                    "notes": text, "source": source,
+                }).execute()
+                conf = {"high": "✅", "medium": "⚠️", "low": "❓"}.get(result.get("confidence", "medium"), "⚠️")
+                items_lines = "\n".join(
+                    f"  • {i.get('name','')}{' (' + i['brand'] + ')' if i.get('brand') else ''}: {i.get('calories',0)} kcal"
+                    for i in items
+                )
                 await update.message.reply_text(
-                    f"Ho registrato:\n"
-                    f"📦 Nome: {item_name}\n"
-                    f"🏷️ Brand: {brand_str}\n\n"
-                    f"Rispondi:\n"
-                    f"✅ *SI* per confermare\n"
-                    f"✏️ *NOME: [nuovo nome]* per correggere\n"
-                    f"✏️ *BRAND: [brand]* per correggere il brand\n"
-                    f"❌ *ANNULLA* per annullare",
+                    f"{conf} *{meal_name}*\n\n{items_lines}\n\n🔥 Totale: `{round(total_cal)} kcal`",
                     parse_mode="Markdown",
                 )
-                return
-
-            # ── Multi-item or DB-overridden → save immediately ───────────
-            if len(items) == 1 and items[0].get("name"):
-                meal_name = items[0]["name"]
-                b = items[0].get("brand")
-                if b and b.lower() not in meal_name.lower():
-                    meal_name = f"{meal_name} {b}"
-            else:
-                meal_name = result.get("meal_name") or text[:50]
-
-            db.table("meals").insert({
-                "user_id":   user_id,
-                "meal_date": date.today().isoformat(),
-                "meal_time": meal_time,
-                "name":      meal_name,
-                "calories":  total_cal,
-                "protein_g": total_prot,
-                "carbs_g":   total_carbs,
-                "fat_g":     total_fat,
-                "fiber_g":   total_fiber,
-                "notes":     text,
-                "source":    source,
-            }).execute()
-
-            # Auto-save each item to food_items when values came from Claude
-            if not db_hits:
-                for item in items:
-                    item_name = item.get("name", "")
-                    b = item.get("brand")
-                    save_name = f"{item_name} {b}".strip() if b and b.lower() not in item_name.lower() else item_name
-                    qty = float(item.get("quantity_g") or 0)
-                    if save_name and qty > 0 and item.get("calories"):
-                        upsert_food_item(
-                            db, user_id, save_name, source,
-                            calories_per_100g=item["calories"] * 100 / qty,
-                            protein_per_100g=(item.get("protein_g") or 0) * 100 / qty or None,
-                            carbs_per_100g=(item.get("carbs_g") or 0) * 100 / qty or None,
-                            fat_per_100g=(item.get("fat_g") or 0) * 100 / qty or None,
-                            fiber_per_100g=(item.get("fiber_g") or 0) * 100 / qty or None,
-                            brand=b or None,
-                        )
-
-            confidence_emoji = {"high": "✅", "medium": "⚠️", "low": "❓"}.get(result.get("confidence", "medium"), "⚠️")
-            items_text = "\n".join(f"  • {i.get('name','')}{' (' + i['brand'] + ')' if i.get('brand') else ''}: {i.get('calories', 0)} kcal" for i in items)
-            db_note = f"\n_📂 Valori da database personale: {', '.join(db_hits)}_" if db_hits else ""
-            reply = (
-                f"{confidence_emoji} *{meal_name}*\n\n"
-                f"{items_text}\n\n"
-                f"📊 *Totali:*\n"
-                f"🔥 Calorie: `{total_cal} kcal`\n"
-                f"💪 Proteine: `{total_prot}g`\n"
-                f"🌾 Carboidrati: `{total_carbs}g`\n"
-                f"🫒 Grassi: `{total_fat}g`\n"
-                f"{db_note}"
-            )
-            await update.message.reply_text(reply, parse_mode="Markdown")
 
     except Exception as e:
         await update.message.reply_text(
@@ -787,8 +655,8 @@ async def _handle_list_food_items(update, db, user_id: str) -> None:
         .order("name").limit(10).execute().data or []
     if not items:
         await update.message.reply_text(
-            "Nessun alimento salvato nel database personale.\n"
-            "Gli alimenti vengono aggiunti automaticamente quando inserisci pasti con nome e quantità."
+            "Nessun alimento negli Alimenti Preferiti.\n"
+            "Quando inserisci un pasto, premi ⭐ per salvarlo nei preferiti."
         )
         return
     total_res = db.table("food_items").select("id").eq("user_id", user_id).execute()
@@ -803,7 +671,7 @@ async def _handle_list_food_items(update, db, user_id: str) -> None:
         lines.append(f"• *{f['name']}*{brand}\n  {cal} kcal · P:{prot}g · C:{carbs}g · G:{fat}g /100g")
     suffix = f"\n\n_Mostrati 10 di {total}. Usa la dashboard per vedere tutti._" if total > 10 else ""
     await update.message.reply_text(
-        f"🗂 *Database alimenti* ({total} totali):\n\n" + "\n\n".join(lines) + suffix,
+        f"⭐ *Alimenti Preferiti* ({total} totali):\n\n" + "\n\n".join(lines) + suffix,
         parse_mode="Markdown",
     )
 
