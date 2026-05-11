@@ -12,22 +12,18 @@ logger = logging.getLogger(__name__)
 
 class IOSHealthSync(BaseModel):
     user_id: str
-    calories: Optional[float] = None           # calorie attive (movimento + sport)
-    resting_calories: Optional[float] = None   # calorie a riposo (BMR)
+    active_calories: Optional[float] = None    # calorie attive aggregate per il giorno (HealthKit)
+    resting_calories: Optional[float] = None   # calorie a riposo aggregate per il giorno (HealthKit)
     steps: Optional[int] = None
-    timestamp: Optional[str] = None          # ISO 8601, e.g. "2026-05-10T16:00:00"
+    timestamp: Optional[str] = None            # ISO 8601, e.g. "2026-05-10T16:00:00"
 
 
 @router.post("/sync-calories")
 async def sync_ios_calories(payload: IOSHealthSync, request: Request):
-    """Receive health data from iOS Shortcuts and update daily_health."""
+    """Receive aggregated daily health data from iOS Shortcuts (HealthKit) and update daily_health."""
     raw_body = await request.body()
-    raw_str = raw_body.decode()
-    print(f"[sync-calories] RAW BODY: {raw_str}", flush=True)
-    print(f"[sync-calories] calories      = {payload.calories!r}  (type: {type(payload.calories).__name__})", flush=True)
-    print(f"[sync-calories] resting_cal   = {payload.resting_calories!r}  (type: {type(payload.resting_calories).__name__})", flush=True)
-    print(f"[sync-calories] steps         = {payload.steps!r}", flush=True)
-    print(f"[sync-calories] timestamp     = {payload.timestamp!r}", flush=True)
+    print(f"[sync-calories] RAW BODY: {raw_body.decode()}", flush=True)
+    print(f"[sync-calories] active_calories={payload.active_calories!r}  resting_calories={payload.resting_calories!r}  steps={payload.steps!r}  timestamp={payload.timestamp!r}", flush=True)
 
     db = get_supabase()
 
@@ -39,13 +35,16 @@ async def sync_ios_calories(payload: IOSHealthSync, request: Request):
             print(f"[sync-calories] WARNING: invalid timestamp {payload.timestamp!r}, using today", flush=True)
 
     update_fields: dict = {}
-    if payload.calories is not None and payload.resting_calories is not None:
-        total = round(payload.calories + payload.resting_calories)
-        print(f"[sync-calories] CALC: {payload.calories} + {payload.resting_calories} = {total}", flush=True)
+    if payload.active_calories is not None:
+        update_fields["active_calories"] = round(payload.active_calories)
+    if payload.resting_calories is not None:
+        update_fields["resting_calories"] = round(payload.resting_calories)
+    if payload.active_calories is not None and payload.resting_calories is not None:
+        total = round(payload.active_calories + payload.resting_calories)
+        print(f"[sync-calories] CALC: {payload.active_calories} + {payload.resting_calories} = {total}", flush=True)
         update_fields["total_calories_iphone"] = total
-    elif payload.calories is not None:
-        print(f"[sync-calories] CALC: only calories={payload.calories} (no resting_calories)", flush=True)
-        update_fields["total_calories_iphone"] = round(payload.calories)
+    elif payload.active_calories is not None:
+        update_fields["total_calories_iphone"] = update_fields["active_calories"]
     if payload.steps is not None:
         update_fields["steps"] = payload.steps
 
@@ -73,8 +72,9 @@ async def sync_ios_calories(payload: IOSHealthSync, request: Request):
         "status": "ok",
         "message": "dati aggiornati",
         "date": health_date,
+        "active_calories": update_fields.get("active_calories"),
+        "resting_calories": update_fields.get("resting_calories"),
         "total_calories_iphone": update_fields.get("total_calories_iphone"),
-        "steps": update_fields.get("steps"),
     }
 
 
