@@ -75,16 +75,13 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
     active_calories_manual = health_data.get("active_calories_manual")
     if active_calories_manual:
         calories_out = active_calories_manual
-        calories_for_macros = bmr + active_calories_manual if bmr else active_calories_manual
     elif total_calories_iphone:
         calories_out = total_calories_iphone
-        calories_for_macros = total_calories_iphone
     elif bmr:
         calories_out = bmr + activities_calories
-        calories_for_macros = bmr + activities_calories
     else:
         calories_out = activities_calories
-        calories_for_macros = activities_calories
+    calories_for_macros = calories_out
 
     # ── Stima calorie a fine giornata ────────────────────────────────────────
     # Proietta le calorie attuali al ritmo corrente fino alle ore 22:00.
