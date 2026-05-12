@@ -118,6 +118,7 @@ async function loadOverview() {
 // Aggiorna card Calorie bruciate + EOD + Bilancio con un valore di `acm`.
 // `calIn` è opzionale: se omesso lo legge dal DOM (usato dopo save immediato).
 function _updateBruciateUI(acm, calIn) {
+  console.log('[_updateBruciateUI] acm:', acm, 'calIn:', calIn);
   // Card superiore
   setText('kpiCalOut', acm ? acm + ' kcal' : '—');
 
@@ -151,6 +152,7 @@ function _updateBruciateUI(acm, calIn) {
 }
 
 function renderKPIs(today) {
+  console.log('[renderKPIs] active_calories_manual:', today.active_calories_manual, 'calories_out:', today.calories_out);
   setText('kpiCalIn', Math.round(today.calories_in) + ' kcal');
 
   const acm = today.active_calories_manual;
@@ -178,16 +180,25 @@ function renderKPIs(today) {
 }
 
 async function saveBruciateAttuali() {
-  const val = parseInt(getVal('inputBruciateAttuali'));
-  if (isNaN(val) || val <= 0 || val > 5000) { alert('Inserisci un valore tra 1 e 5000 kcal'); return; }
+  console.log('[bruciate] click Salva');
+  const raw = getVal('inputBruciateAttuali');
+  const val = parseInt(raw);
+  console.log('[bruciate] raw input:', raw, '→ parsed:', val, 'USER_ID:', USER_ID);
+  if (isNaN(val) || val <= 0 || val > 5000) {
+    alert('Inserisci un valore tra 1 e 5000 kcal');
+    return;
+  }
   const d = overviewDate || new Date().toLocaleDateString('sv-SE');
+  console.log('[bruciate] saving active_calories_manual=' + val + ' date=' + d);
   try {
-    await api.saveHealth({ user_id: USER_ID, health_date: d, active_calories_manual: val });
-    // Aggiornamento immediato senza attendere il re-fetch
+    const res = await api.saveHealth({ user_id: USER_ID, health_date: d, active_calories_manual: val });
+    console.log('[bruciate] API response:', res);
     _updateBruciateUI(val);
-    // Re-fetch in background per allineare tutti i dati
-    loadOverview();
+    console.log('[bruciate] UI updated immediately, launching loadOverview');
+    await loadOverview();
+    console.log('[bruciate] loadOverview complete');
   } catch (e) {
+    console.error('[bruciate] ERROR:', e);
     alert('Errore nel salvataggio: ' + e.message);
   }
 }
