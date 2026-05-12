@@ -12,12 +12,10 @@ def calculate_bmr(weight_kg: float, height_cm: float, age: int, sex: str = "male
 
 
 def calc_dynamic_macros(calories_out: float, weight_kg: float) -> tuple[int, int, int]:
-    """Calcola target macronutrienti dinamici per ciclista in allenamento.
-    Returns (protein_g, carbs_g, fat_g).
-    """
-    protein_g = round(weight_kg * 2)           # 2 g/kg fisso
-    fat_g = round(calories_out * 0.25 / 9)     # 25% delle kcal totali
-    carbs_g = max(50, round((calories_out - protein_g * 4 - fat_g * 9) / 4))
+    protein_g = round(weight_kg * 2)
+    fat_g = round(calories_out * 0.25 / 9)
+    carbs_kcal = calories_out - (protein_g * 4) - (fat_g * 9)
+    carbs_g = max(50, round(carbs_kcal / 4))
     return protein_g, carbs_g, fat_g
 
 
@@ -110,6 +108,10 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
         else:
             calories_for_macros = calories_out
         protein_goal, carbs_goal, fat_goal = calc_dynamic_macros(calories_for_macros, float(weight_kg))
+        logger.info(
+            "calc_dynamic_macros | calories_for_macros=%.0f protein=%dg carbs=%dg fat=%dg",
+            calories_for_macros, protein_goal, carbs_goal, fat_goal,
+        )
         macro_targets_dynamic = True
         logger.info(
             "macro targets DYNAMIC | cal_iphone=%s bmr=%s acm=%s cal_for_macros=%.0f weight=%.1f "
