@@ -63,10 +63,14 @@
               <span id="kpiCalGoal">/ — kcal</span>
             </div>
           </div>
-          <div class="kpi-card">
+          <div class="kpi-card kpi-card-clickable" id="kpiCardBruciate" onclick="openCalBruciateEdit()">
             <div class="kpi-icon">⚡</div>
             <div class="kpi-value" id="kpiCalOut">—</div>
-            <div class="kpi-label">Calorie bruciate</div>
+            <input type="number" id="inputCalBruciate" class="kpi-inline-input" style="display:none"
+                   placeholder="kcal" min="1" max="5000"
+                   onkeydown="onCalBruciateKey(event)" onblur="saveCalBruciate()" />
+            <div class="kpi-label">Calorie bruciate <span class="kpi-edit-hint">✏️</span></div>
+            <div id="kpiCalEodInline" style="font-size:.7rem;color:var(--text2);margin-top:.15rem"></div>
           </div>
           <div class="kpi-card">
             <div class="kpi-icon balance-icon" id="kpiBalanceIcon">⚖️</div>
@@ -77,23 +81,6 @@
             <div class="kpi-icon">⚖️</div>
             <div class="kpi-value" id="kpiWeight">—</div>
             <div class="kpi-label">Peso (kg) <span class="kpi-edit-hint">✏️</span></div>
-          </div>
-        </div>
-
-        <!-- Calorie bruciate attuali + stima EOD -->
-        <div class="card calorie-burn-row">
-          <div class="calorie-burn-col">
-            <div class="calorie-burn-label">🔥 Calorie bruciate attuali</div>
-            <div style="display:flex;align-items:center;gap:.5rem;margin-top:.35rem">
-              <input type="number" id="inputBruciateAttuali" placeholder="es. 450"
-                     class="calorie-burn-input" min="0" max="5000" />
-              <button class="btn btn-sm btn-primary" id="btnSaveBruciate">Salva</button>
-            </div>
-          </div>
-          <div class="calorie-burn-col calorie-burn-col-right">
-            <div class="calorie-burn-label">📈 Stima a fine giornata</div>
-            <div id="kpiCalEod" class="calorie-burn-value">—</div>
-            <div id="kpiCalEodNote" class="calorie-burn-note"></div>
           </div>
         </div>
 

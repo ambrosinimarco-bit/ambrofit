@@ -81,6 +81,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .kpi-card-clickable { cursor: pointer; transition: border-color .15s; }
 .kpi-card-clickable:hover { border-color: var(--accent); }
 .kpi-edit-hint { font-size: .7rem; opacity: .5; }
+.kpi-inline-input { width: 100%; padding: .25rem .4rem; font-size: 1.4rem; font-weight: 700; border-radius: 6px; border: 1px solid var(--accent); background: var(--bg3); color: var(--text1); outline: none; }
 
 /* ─── Progress bars ─────────────────────────────────────────────── */
 .progress-bar { flex: 1; height: 6px; background: var(--bg3); border-radius: 99px; overflow: hidden; }
@@ -389,14 +390,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .exercise-notes { color: #f9c74f; }
 
 /* ─── Calorie burn row ──────────────────────────────────────────── */
-.calorie-burn-row { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:.85rem 1.1rem; margin-bottom:.75rem; flex-wrap:wrap; }
-.calorie-burn-col { display:flex; flex-direction:column; }
-.calorie-burn-col-right { align-items:flex-end; }
-.calorie-burn-label { font-size:.78rem; color:var(--text2); font-weight:500; }
-.calorie-burn-value { font-size:1.45rem; font-weight:700; color:var(--text1); margin-top:.15rem; }
-.calorie-burn-note { font-size:.7rem; color:var(--text2); margin-top:.1rem; }
-.calorie-burn-input { width:6.5rem; padding:.35rem .55rem; font-size:.95rem; border-radius:6px; border:1px solid var(--border); background:var(--bg3); color:var(--text1); }
-.calorie-burn-input:focus { outline:none; border-color:var(--accent); }
 
 /* ─── Responsive ────────────────────────────────────────────────── */
 @media (max-width: 900px) {

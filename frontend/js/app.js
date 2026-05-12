@@ -32,7 +32,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   updateNutritionDateLabel();
 
-  document.getElementById('btnSaveBruciate')?.addEventListener('click', saveBruciateAttuali);
 });
 
 // ─── Navigation ───────────────────────────────────────────────────
@@ -117,32 +116,26 @@ async function loadOverview() {
   loadGoals();
 }
 
-// Aggiorna card Calorie bruciate + EOD + Bilancio con un valore di `acm`.
-// `calIn` è opzionale: se omesso lo legge dal DOM (usato dopo save immediato).
 function _updateBruciateUI(acm, calIn) {
-  console.log('[_updateBruciateUI] acm:', acm, 'calIn:', calIn);
-  // Card superiore
   setText('kpiCalOut', acm ? acm + ' kcal' : '—');
 
-  // EOD
-  const eodEl  = document.getElementById('kpiCalEod');
-  const noteEl = document.getElementById('kpiCalEodNote');
   const now     = new Date();
   const elapsed = now.getHours() + now.getMinutes() / 60;
   let eod = null;
   if (acm && elapsed >= 1) {
-    eod = Math.max(1900, Math.round(acm / elapsed * 24));
+    eod = Math.max(1900, Math.round(acm / elapsed * 22));
   }
-  if (eodEl) eodEl.textContent = eod ? eod + ' kcal' : '—';
-  if (noteEl) noteEl.textContent = eod
-    ? `proiezione ore ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`
-    : '';
+  const eodEl = document.getElementById('kpiCalEodInline');
+  if (eodEl) {
+    eodEl.textContent = eod
+      ? `Stima: ${eod} kcal a fine giornata (ore 22:00)`
+      : '';
+  }
 
-  // Bilancio
   const calories_in = calIn !== undefined && calIn !== null
     ? calIn
     : (parseInt(document.getElementById('kpiCalIn')?.textContent) || 0);
-  const burnForBalance = eod ?? acm ?? 0;
+  const burnForBalance = eod !== null ? eod : (acm ?? 0);
   if (burnForBalance > 0) {
     const net = calories_in - burnForBalance;
     const netEl = document.getElementById('kpiBalance');
@@ -155,13 +148,51 @@ function _updateBruciateUI(acm, calIn) {
   }
 }
 
+function openCalBruciateEdit() {
+  const valEl = document.getElementById('kpiCalOut');
+  const inp   = document.getElementById('inputCalBruciate');
+  if (!inp || inp.style.display !== 'none') return;
+  const current = valEl.textContent.replace(' kcal', '').trim();
+  inp.value = current !== '—' ? current : '';
+  valEl.style.display = 'none';
+  inp.style.display = 'block';
+  inp.focus();
+  inp.select();
+}
+
+function onCalBruciateKey(e) {
+  if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+  if (e.key === 'Escape') { _closeCalBruciateInput(); }
+}
+
+function _closeCalBruciateInput() {
+  const valEl = document.getElementById('kpiCalOut');
+  const inp   = document.getElementById('inputCalBruciate');
+  if (inp) inp.style.display = 'none';
+  if (valEl) valEl.style.display = '';
+}
+
+async function saveCalBruciate() {
+  const inp = document.getElementById('inputCalBruciate');
+  if (!inp || inp.style.display === 'none') return;
+  const val = parseInt(inp.value);
+  _closeCalBruciateInput();
+  if (isNaN(val) || val <= 0 || val > 5000) return;
+  const d = overviewDate || new Date().toLocaleDateString('sv-SE');
+  try {
+    await api.saveHealth({ user_id: USER_ID, health_date: d, active_calories_manual: val });
+    _updateBruciateUI(val);
+    await loadOverview();
+  } catch (e) {
+    alert('Errore nel salvataggio: ' + e.message);
+  }
+}
+
 function renderKPIs(today) {
   console.log('[renderKPIs] active_calories_manual:', today.active_calories_manual, 'calories_out:', today.calories_out);
   setText('kpiCalIn', Math.round(today.calories_in) + ' kcal');
 
   const acm = today.active_calories_manual;
-  if (acm) setVal('inputBruciateAttuali', acm);
-
   _updateBruciateUI(acm, Math.round(today.calories_in));
 
   // Se non c'è active_calories_manual usa calories_out come fallback per il bilancio
@@ -181,30 +212,6 @@ function renderKPIs(today) {
 
   const pct = Math.min(100, (today.calories_in / today.calorie_goal) * 100);
   setWidth('kpiCalInBar', pct + '%');
-}
-
-async function saveBruciateAttuali() {
-  console.log('[bruciate] click Salva');
-  const raw = getVal('inputBruciateAttuali');
-  const val = parseInt(raw);
-  console.log('[bruciate] raw input:', raw, '→ parsed:', val, 'USER_ID:', USER_ID);
-  if (isNaN(val) || val <= 0 || val > 5000) {
-    alert('Inserisci un valore tra 1 e 5000 kcal');
-    return;
-  }
-  const d = overviewDate || new Date().toLocaleDateString('sv-SE');
-  console.log('[bruciate] saving active_calories_manual=' + val + ' date=' + d);
-  try {
-    const res = await api.saveHealth({ user_id: USER_ID, health_date: d, active_calories_manual: val });
-    console.log('[bruciate] API response:', res);
-    _updateBruciateUI(val);
-    console.log('[bruciate] UI updated immediately, launching loadOverview');
-    await loadOverview();
-    console.log('[bruciate] loadOverview complete');
-  } catch (e) {
-    console.error('[bruciate] ERROR:', e);
-    alert('Errore nel salvataggio: ' + e.message);
-  }
 }
 
 function renderMacros(today) {
@@ -966,7 +973,7 @@ function openAddModal() {
   const activeTab = document.querySelector('.nav-item.active')?.dataset.tab;
   if (activeTab === 'nutrition') openAddMealModal();
   else if (activeTab === 'activities') openAddActivityModal();
-  else if (activeTab === 'overview') { document.getElementById('inputBruciateAttuali')?.focus(); }
+  else if (activeTab === 'overview') { openCalBruciateEdit(); }
   else openAddMealModal();
 }
 
