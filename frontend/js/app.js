@@ -31,6 +31,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   updateNutritionDateLabel();
+
+  document.getElementById('btnSaveBruciate')?.addEventListener('click', saveBruciateAttuali);
 });
 
 // ─── Navigation ───────────────────────────────────────────────────
