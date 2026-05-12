@@ -72,13 +72,14 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
 
     # ── Calorie bruciate ─────────────────────────────────────────────────────
     # Priority: 1) total_calories_iphone  2) active_calories_manual  3) bmr+activities
-    # active_calories_manual already includes basal burn — do NOT add bmr on top.
+    # Priority: 1) active_calories_manual  2) total_calories_iphone  3) bmr+activities
+    # active_calories_manual is explicit manual input and always wins.
     total_calories_iphone = health_data.get("total_calories_iphone")
     active_calories_manual = health_data.get("active_calories_manual")
-    if total_calories_iphone:
-        calories_out = total_calories_iphone
-    elif active_calories_manual:
+    if active_calories_manual:
         calories_out = active_calories_manual
+    elif total_calories_iphone:
+        calories_out = total_calories_iphone
     elif bmr:
         calories_out = bmr + activities_calories
     else:
@@ -98,12 +99,11 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
     calorie_goal = user_data.get("daily_calorie_goal", 2400)
 
     # ── Macro targets ────────────────────────────────────────────────────────
-    # calc_dynamic_macros expects full TDEE. active_calories_manual is the active
-    # portion only (iPhone "Active Energy"), so add BMR back for macro calculation
-    # to avoid protein_g exceeding total calories and producing nonsensical carbs.
+    # calc_dynamic_macros expects full TDEE. active_calories_manual is active-only,
+    # so add BMR back when it is the source to get a realistic TDEE for macro calc.
     _has_reliable_cal = bool(total_calories_iphone or bmr or active_calories_manual)
     if _has_reliable_cal and weight_kg:
-        if active_calories_manual and not total_calories_iphone and bmr:
+        if active_calories_manual and bmr:
             calories_for_macros = bmr + active_calories_manual
         else:
             calories_for_macros = calories_out
