@@ -9,7 +9,17 @@ router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 @router.get("/today/{user_id}")
 def dashboard_today(user_id: str, target_date: date | None = None):
-    return get_daily_summary(user_id, target_date or date.today())
+    result = get_daily_summary(user_id, target_date or date.today())
+    print(
+        f"[today] total_calories_iphone={result.get('total_calories_iphone')!r}"
+        f"  active_calories_manual={result.get('active_calories_manual')!r}"
+        f"  bmr={result.get('bmr')!r}"
+        f"  weight_kg={result.get('weight_kg')!r}"
+        f"  calories_out={result.get('calories_out')!r}"
+        f"  macro_targets_dynamic={result.get('macro_targets_dynamic')!r}",
+        flush=True,
+    )
+    return result
 
 
 @router.get("/week/{user_id}")
