@@ -89,7 +89,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .calorie-fill { background: linear-gradient(90deg, var(--accent2), var(--accent)); }
 
 /* ─── Macros ────────────────────────────────────────────────────── */
-.macros-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1rem; }
+.macros-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: .75rem; }
 
 .macro-card {
   background: var(--bg2); border: 1px solid var(--border);
@@ -97,13 +97,36 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   display: flex; flex-direction: column; gap: .5rem;
 }
 .macro-name { font-size: .85rem; font-weight: 600; }
-.macro-bar-wrap { }
-.macro-progress-bar { height: 8px; background: var(--bg3); border-radius: 99px; overflow: hidden; }
-.macro-fill { height: 100%; border-radius: 99px; transition: width .3s; max-width: 100%; }
+.macro-progress-bar { height: 10px; background: rgba(255,255,255,.08); border-radius: 99px; overflow: hidden; }
+.macro-fill { height: 100%; border-radius: 99px; transition: width .4s, background .4s; }
+
+/* base colours (low / mid) */
 .macro-card.protein .macro-fill { background: #4ade80; }
-.macro-card.carbs .macro-fill { background: #facc15; }
-.macro-card.fat .macro-fill { background: #f97316; }
+.macro-card.carbs   .macro-fill { background: #facc15; }
+.macro-card.fat     .macro-fill { background: #f97316; }
+/* bright (50-80%) */
+.macro-card.protein .macro-fill[data-state="mid"] { background: #22c55e; }
+.macro-card.carbs   .macro-fill[data-state="mid"] { background: #eab308; }
+.macro-card.fat     .macro-fill[data-state="mid"] { background: #ea580c; }
+/* good (80-100%) — all go green */
+.macro-fill[data-state="good"] { background: #00d4aa; }
+/* over (>100%) — all go red */
+.macro-fill[data-state="over"] { background: #ef4444; }
+
 .macro-values { font-size: .8rem; color: var(--text2); }
+.macro-pct { font-size: .75rem; font-weight: 600; margin-left: .15rem; }
+.macro-pct[data-state="low"]  { color: var(--text2); }
+.macro-pct[data-state="mid"]  { color: #facc15; }
+.macro-pct[data-state="good"] { color: #00d4aa; }
+.macro-pct[data-state="over"] { color: #ef4444; }
+
+.macro-tips {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: .85rem 1.1rem;
+  margin-bottom: .75rem; display: flex; flex-direction: column; gap: .35rem;
+}
+.macro-tips p { margin: 0; font-size: .82rem; color: var(--text1); line-height: 1.4; }
+.macro-tips p::before { content: '• '; color: var(--text2); }
 
 /* ─── Charts ────────────────────────────────────────────────────── */
 .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }

@@ -226,20 +226,60 @@ function renderKPIs(today) {
 
 function renderMacros(today) {
   const dynamic = today.macro_targets_dynamic;
-  const macros = [
-    { key: 'Protein', val: today.protein_g, goal: today.protein_goal_g },
-    { key: 'Carbs',   val: today.carbs_g,   goal: today.carbs_goal_g },
-    { key: 'Fat',     val: today.fat_g,     goal: today.fat_goal_g },
+  const defs = [
+    { key: 'Protein', val: today.protein_g,  goal: today.protein_goal_g, label: 'proteine',    genderLabel: 'le' },
+    { key: 'Carbs',   val: today.carbs_g,    goal: today.carbs_goal_g,   label: 'carboidrati', genderLabel: 'i' },
+    { key: 'Fat',     val: today.fat_g,      goal: today.fat_goal_g,     label: 'grassi',      genderLabel: 'i' },
   ];
-  macros.forEach(m => {
-    setText('macro' + m.key, Math.round(m.val) + 'g');
-    const goalLabel = m.goal
-      ? Math.round(m.goal) + 'g' + (dynamic ? ' ⚡' : '')
-      : '—';
-    setText('macro' + m.key + 'Goal', goalLabel);
-    const pct = m.goal ? Math.min(100, (m.val / m.goal) * 100) : 0;
-    setWidth('macro' + m.key + 'Bar', pct + '%');
+  const results = defs.map(m => {
+    const val  = Math.round(m.val  || 0);
+    const goal = m.goal ? Math.round(m.goal) : null;
+    const rawPct = goal ? Math.round((m.val / m.goal) * 100) : 0;
+    const state = rawPct < 50 ? 'low' : rawPct < 80 ? 'mid' : rawPct <= 100 ? 'good' : 'over';
+
+    setText('macro' + m.key, val + 'g');
+    setText('macro' + m.key + 'Goal', goal ? goal + 'g' + (dynamic ? ' ⚡' : '') : '—');
+
+    const pctEl = document.getElementById('macro' + m.key + 'Pct');
+    if (pctEl) { pctEl.textContent = goal ? `(${rawPct}%)` : ''; pctEl.dataset.state = state; }
+
+    const barEl = document.getElementById('macro' + m.key + 'Bar');
+    if (barEl) { barEl.style.width = Math.min(100, rawPct) + '%'; barEl.dataset.state = state; }
+
+    return { ...m, val, goal, pct: rawPct, state };
   });
+
+  renderMacroTips(results);
+}
+
+function renderMacroTips(macros) {
+  const box = document.getElementById('macroTips');
+  if (!box) return;
+
+  const tips = [];
+  macros.forEach(m => {
+    if (!m.goal) return;
+    const { label, genderLabel: g, pct } = m;
+    const Cap = label.charAt(0).toUpperCase() + label.slice(1);
+    if (pct > 100) {
+      tips.push({ priority: 0, text: `${Cap} oltre il target (${pct}%) — evita ulteriori fonti di ${label}` });
+    } else if (pct < 50) {
+      tips.push({ priority: 1, text: `Sei molto indietro su${g === 'le' ? 'lle' : 'i'} ${label} (${pct}%) — priorità nei prossimi pasti` });
+    } else if (pct >= 80) {
+      tips.push({ priority: 2, text: `${Cap} quasi al target (${pct}%) — ancora poco spazio` });
+    } else {
+      tips.push({ priority: 3, text: `${Cap} in linea con l'obiettivo (${pct}%)` });
+    }
+  });
+
+  if (!tips.length) { box.style.display = 'none'; return; }
+
+  tips.sort((a, b) => a.priority - b.priority);
+  const show = tips.filter(t => t.priority <= 2).slice(0, 2);
+  if (!show.length) { box.style.display = 'none'; return; }
+
+  box.style.display = '';
+  box.innerHTML = show.map(t => `<p>${t.text}</p>`).join('');
 }
 
 function renderWeeklyActivities(days) {
