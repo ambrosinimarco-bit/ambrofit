@@ -117,40 +117,32 @@ async function loadOverview() {
 
 function renderKPIs(today) {
   setText('kpiCalIn', Math.round(today.calories_in) + ' kcal');
-  setText('kpiCalOut', Math.round(today.calories_out) + ' kcal');
 
-  const sourceEl = document.getElementById('kpiCalOutSource');
-  if (sourceEl) {
-    if (today.total_calories_iphone) {
-      sourceEl.textContent = 'da iPhone Fitness ✓';
-      sourceEl.style.color = 'var(--accent)';
-    } else if (today.bmr) {
-      sourceEl.textContent = `stima BMR — inserisci il totale da app Fitness`;
-      sourceEl.style.color = 'var(--text2)';
-    } else {
-      sourceEl.textContent = '';
-    }
-  }
-
-  // ── Calorie bruciate attuali + stima EOD ──────────────────────────
+  // ── Card "Calorie bruciate": mostra active_calories_manual ────────
   const acm = today.active_calories_manual;
+  setText('kpiCalOut', acm ? acm + ' kcal' : '—');
+  const sourceEl = document.getElementById('kpiCalOutSource');
+  if (sourceEl) sourceEl.textContent = '';
+
+  // Popola il campo input con il valore salvato
   if (acm) setVal('inputBruciateAttuali', acm);
 
+  // ── Stima EOD ─────────────────────────────────────────────────────
   const eodEl  = document.getElementById('kpiCalEod');
   const noteEl = document.getElementById('kpiCalEodNote');
-  const now    = new Date();
+  const now     = new Date();
   const elapsed = now.getHours() + now.getMinutes() / 60;
   let eod = null;
   if (acm && elapsed >= 1) {
     eod = Math.max(1900, Math.round(acm / elapsed * 24));
-  } else if (today.estimated_eod_calories) {
-    eod = today.estimated_eod_calories;
   }
   if (eodEl) eodEl.textContent = eod ? eod + ' kcal' : '—';
-  if (noteEl) noteEl.textContent = eod ? `proiezione ore ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}` : '';
+  if (noteEl) noteEl.textContent = eod
+    ? `proiezione ore ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`
+    : '';
 
-  // Bilancio usa stima EOD se disponibile, altrimenti calories_out
-  const burnForBalance = eod || Math.round(today.calories_out);
+  // ── Bilancio usa sempre la stima EOD ──────────────────────────────
+  const burnForBalance = eod ?? Math.round(today.calories_out);
   const net = Math.round(today.calories_in) - burnForBalance;
   const netEl = document.getElementById('kpiBalance');
   netEl.textContent = (net >= 0 ? '+' : '') + net + ' kcal';
@@ -936,7 +928,7 @@ function openAddModal() {
   const activeTab = document.querySelector('.nav-item.active')?.dataset.tab;
   if (activeTab === 'nutrition') openAddMealModal();
   else if (activeTab === 'activities') openAddActivityModal();
-  else if (activeTab === 'overview') openCalorieBruciateModal();
+  else if (activeTab === 'overview') { document.getElementById('inputBruciateAttuali')?.focus(); }
   else openAddMealModal();
 }
 
