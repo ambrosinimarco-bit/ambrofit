@@ -81,6 +81,23 @@
           </div>
         </div>
 
+        <!-- Calorie bruciate attuali + stima EOD -->
+        <div class="card calorie-burn-row">
+          <div class="calorie-burn-col">
+            <div class="calorie-burn-label">🔥 Calorie bruciate attuali</div>
+            <div style="display:flex;align-items:center;gap:.5rem;margin-top:.35rem">
+              <input type="number" id="inputBruciateAttuali" placeholder="es. 450"
+                     class="calorie-burn-input" min="0" max="5000" />
+              <button class="btn btn-sm btn-primary" onclick="saveBruciateAttuali()">Salva</button>
+            </div>
+          </div>
+          <div class="calorie-burn-col calorie-burn-col-right">
+            <div class="calorie-burn-label">📈 Stima a fine giornata</div>
+            <div id="kpiCalEod" class="calorie-burn-value">—</div>
+            <div id="kpiCalEodNote" class="calorie-burn-note"></div>
+          </div>
+        </div>
+
         <!-- Macros row -->
         <div class="macros-row">
           <div class="macro-card protein">

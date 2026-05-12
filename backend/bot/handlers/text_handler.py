@@ -1,7 +1,7 @@
 import asyncio
 import io
 import re
-from datetime import date, datetime
+from datetime import date, datetime, datetime as _dt
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from backend.services.claude_service import analyze_food_text, analyze_voice_transcript
@@ -71,6 +71,13 @@ def _quick_classify(text: str) -> str | None:
     return None
 
 
+_BRUCIATE_RE = re.compile(
+    r'(?:calorie\s+)?bruciat[eo]\s+(\d+(?:[.,]\d+)?)'
+    r'|(\d+(?:[.,]\d+)?)\s+(?:calorie\s+)?bruciat[eo]',
+    re.IGNORECASE,
+)
+
+
 async def dispatch_message(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -122,6 +129,13 @@ async def dispatch_message(
                     f"Vuoi eliminare *{pending_df['food_name']}* dal database? Rispondi *SI* o *ANNULLA*.",
                     parse_mode="Markdown",
                 )
+            return
+
+        # ── Handle "bruciate X" / "calorie bruciate X" ────────────────
+        m_bruciate = _BRUCIATE_RE.search(text)
+        if m_bruciate:
+            raw = (m_bruciate.group(1) or m_bruciate.group(2)).replace(',', '.')
+            await _handle_bruciate(update, db := get_supabase(), user_id, int(round(float(raw))))
             return
 
         quick = _quick_classify(text)
@@ -764,5 +778,38 @@ async def _handle_delete_meal(update, context, db, user_id: str, data: dict) -> 
     await update.message.reply_text(
         f"Vuoi eliminare *{meal['name']}*{cal_str}?\n"
         f"Rispondi *SI* per confermare o *ANNULLA* per annullare.",
+        parse_mode="Markdown",
+    )
+
+
+async def _handle_bruciate(update, db, user_id: str, calories: int) -> None:
+    """Salva active_calories_manual e risponde con il riepilogo calorico."""
+    today = date.today().isoformat()
+    existing = db.table("daily_health").select("id")\
+        .eq("user_id", user_id).eq("health_date", today).limit(1).execute()
+    row = {"user_id": user_id, "health_date": today, "active_calories_manual": calories}
+    if existing.data:
+        db.table("daily_health").update({"active_calories_manual": calories})\
+            .eq("id", existing.data[0]["id"]).execute()
+    else:
+        db.table("daily_health").insert(row).execute()
+
+    # Calcola stima EOD
+    now = _dt.now()
+    elapsed = now.hour + now.minute / 60
+    eod = max(1900, round(calories / elapsed * 24)) if elapsed >= 1 else 1900
+
+    # Riepilogo calorie assunte oggi
+    meals_res = db.table("meals").select("calories").eq("user_id", user_id).eq("meal_date", today).execute()
+    calories_in = round(sum(m.get("calories", 0) for m in (meals_res.data or [])))
+    bilancio = calories_in - eod
+    bal_emoji = "🟢" if bilancio <= 0 else "🔴"
+
+    await update.message.reply_text(
+        f"🔥 *Calorie bruciate attuali* registrate: `{calories} kcal`\n\n"
+        f"📈 *Stima a fine giornata:* `{eod} kcal`\n"
+        f"  _(proiezione alle ore {now.strftime('%H:%M')})_\n\n"
+        f"🍽 *Assunte oggi:* `{calories_in} kcal`\n"
+        f"⚖️ *Bilancio stimato:* `{bilancio:+d} kcal` {bal_emoji}",
         parse_mode="Markdown",
     )

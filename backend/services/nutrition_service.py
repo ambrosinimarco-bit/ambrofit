@@ -74,12 +74,24 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
 
     # ── Calorie bruciate ─────────────────────────────────────────────────────
     total_calories_iphone = health_data.get("total_calories_iphone")
+    active_calories_manual = health_data.get("active_calories_manual")
     if total_calories_iphone:
         calories_out = total_calories_iphone
     elif bmr:
         calories_out = bmr + activities_calories
     else:
         calories_out = activities_calories
+
+    # ── Stima calorie a fine giornata ────────────────────────────────────────
+    # Proietta le calorie attuali al ritmo corrente sull'intera giornata.
+    # Usata solo se active_calories_manual è presente e la data è oggi.
+    estimated_eod_calories: int | None = None
+    if active_calories_manual and target_date == date.today():
+        from datetime import datetime as _dt
+        now = _dt.now()
+        elapsed_hours = now.hour + now.minute / 60
+        if elapsed_hours >= 1:
+            estimated_eod_calories = max(1900, round(active_calories_manual / elapsed_hours * 24))
 
     calorie_goal = user_data.get("daily_calorie_goal", 2400)
 
@@ -113,6 +125,8 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
         "activities_calories": round(activities_calories, 1),
         "bmr": bmr,
         "total_calories_iphone": total_calories_iphone,
+        "active_calories_manual": active_calories_manual,
+        "estimated_eod_calories": estimated_eod_calories,
         "net_calories": round(calories_in - calories_out, 1),
         "calorie_goal": calorie_goal,
         "calorie_balance": round(calories_in - calorie_goal, 1),

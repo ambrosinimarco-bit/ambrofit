@@ -92,6 +92,7 @@ class DailyHealthCreate(BaseModel):
     stress_score: Optional[int] = None
     resting_hr: Optional[int] = None
     total_calories_iphone: Optional[int] = None
+    active_calories_manual: Optional[int] = None
     notes: Optional[str] = None
 
 

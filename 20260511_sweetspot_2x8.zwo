@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Ambrofit</author>
+  <name>Sweet Spot 2x8min</name>
+  <description>Sweet Spot 2x8min — FTP 202W, peso 75kg
+
+⚠️ Importare in MyWhoosh Workout Builder web, correggere FTP a 202W e peso a 75kg prima di esportare su MyWhoosh.</description>
+  <sportType>bike</sportType>
+  <tags/>
+  <workout>
+    <!-- Riscaldamento: 10 min 110W → 150W (rampa lineare) -->
+    <Warmup Duration="600" PowerLow="0.5446" PowerHigh="0.7426"/>
+    <!-- Attivazione: 3 min 160W -->
+    <SteadyState Duration="180" Power="0.7921"/>
+    <!-- Recupero: 2 min 110W -->
+    <SteadyState Duration="120" Power="0.5446"/>
+    <!-- Sweet Spot Block 1: 8 min 182W -->
+    <SteadyState Duration="480" Power="0.901"/>
+    <!-- Recupero: 3 min 120W -->
+    <SteadyState Duration="180" Power="0.5941"/>
+    <!-- Sweet Spot Block 2: 8 min 186W -->
+    <SteadyState Duration="480" Power="0.9208"/>
+    <!-- Recupero: 3 min 120W -->
+    <SteadyState Duration="180" Power="0.5941"/>
+    <!-- Defaticamento: 8 min 130W → 100W (rampa discendente) -->
+    <Cooldown Duration="480" PowerHigh="0.6436" PowerLow="0.495"/>
+  </workout>
+</workout_file>

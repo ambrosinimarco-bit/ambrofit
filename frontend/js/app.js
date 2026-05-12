@@ -132,16 +132,49 @@ function renderKPIs(today) {
     }
   }
 
-  const net = today.net_calories;
+  // ── Calorie bruciate attuali + stima EOD ──────────────────────────
+  const acm = today.active_calories_manual;
+  if (acm) setVal('inputBruciateAttuali', acm);
+
+  const eodEl  = document.getElementById('kpiCalEod');
+  const noteEl = document.getElementById('kpiCalEodNote');
+  const now    = new Date();
+  const elapsed = now.getHours() + now.getMinutes() / 60;
+  let eod = null;
+  if (acm && elapsed >= 1) {
+    eod = Math.max(1900, Math.round(acm / elapsed * 24));
+  } else if (today.estimated_eod_calories) {
+    eod = today.estimated_eod_calories;
+  }
+  if (eodEl) eodEl.textContent = eod ? eod + ' kcal' : '—';
+  if (noteEl) noteEl.textContent = eod ? `proiezione ore ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}` : '';
+
+  // Bilancio usa stima EOD se disponibile, altrimenti calories_out
+  const burnForBalance = eod || Math.round(today.calories_out);
+  const net = Math.round(today.calories_in) - burnForBalance;
   const netEl = document.getElementById('kpiBalance');
-  netEl.textContent = (net >= 0 ? '+' : '') + Math.round(net) + ' kcal';
+  netEl.textContent = (net >= 0 ? '+' : '') + net + ' kcal';
   netEl.style.color = net > 0 ? '#ff4757' : '#00d4aa';
+  const balIcon = document.getElementById('kpiBalanceIcon');
+  if (balIcon) balIcon.textContent = eod ? '📈' : '⚖️';
 
   setText('kpiCalGoal', '/ ' + today.calorie_goal + ' kcal');
   setText('kpiWeight', today.weight_kg ? today.weight_kg + ' kg' : '—');
 
   const pct = Math.min(100, (today.calories_in / today.calorie_goal) * 100);
   setWidth('kpiCalInBar', pct + '%');
+}
+
+async function saveBruciateAttuali() {
+  const val = parseInt(getVal('inputBruciateAttuali'));
+  if (isNaN(val) || val <= 0 || val > 5000) { alert('Inserisci un valore tra 1 e 5000 kcal'); return; }
+  const d = overviewDate || new Date().toLocaleDateString('sv-SE');
+  try {
+    await api.saveHealth({ user_id: USER_ID, health_date: d, active_calories_manual: val });
+    loadOverview();
+  } catch (e) {
+    alert('Errore nel salvataggio: ' + e.message);
+  }
 }
 
 function renderMacros(today) {
