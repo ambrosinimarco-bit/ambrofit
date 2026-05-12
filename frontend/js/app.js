@@ -225,6 +225,7 @@ function renderKPIs(today) {
 }
 
 function renderMacros(today) {
+  console.log('[renderMacros] protein_goal_g:', today.protein_goal_g, 'carbs_goal_g:', today.carbs_goal_g, 'fat_goal_g:', today.fat_goal_g, 'macro_targets_dynamic:', today.macro_targets_dynamic);
   const dynamic = today.macro_targets_dynamic;
   const defs = [
     { key: 'Protein', val: today.protein_g,  goal: today.protein_goal_g, label: 'proteine',    genderLabel: 'le' },
