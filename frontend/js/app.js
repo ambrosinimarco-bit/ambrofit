@@ -121,31 +121,53 @@ function _updateBruciateUI(acm, calIn) {
 
   const now     = new Date();
   const elapsed = now.getHours() + now.getMinutes() / 60;
-  let eod = null;
+  let eodBurn = null;
+  let eodCalIn = null;
   if (acm && elapsed >= 1) {
-    eod = Math.max(1900, Math.round(acm / elapsed * 22));
+    eodBurn  = Math.max(1900, Math.round(acm   / elapsed * 22));
+    eodCalIn = calIn && calIn > 0 ? Math.round(calIn / elapsed * 22) : null;
   }
+
   const eodEl = document.getElementById('kpiCalEodInline');
   if (eodEl) {
-    eodEl.textContent = eod
-      ? `Stima: ${eod} kcal a fine giornata (ore 22:00)`
+    eodEl.textContent = eodBurn
+      ? `Stima: ${eodBurn} kcal a fine giornata (ore 22:00)`
       : '';
   }
 
   const calories_in = calIn !== undefined && calIn !== null
     ? calIn
     : (parseInt(document.getElementById('kpiCalIn')?.textContent) || 0);
-  const burnForBalance = eod !== null ? eod : (acm ?? 0);
-  if (burnForBalance > 0) {
-    const net = calories_in - burnForBalance;
-    const netEl = document.getElementById('kpiBalance');
-    if (netEl) {
-      netEl.textContent = (net >= 0 ? '+' : '') + net + ' kcal';
-      netEl.style.color = net > 0 ? '#ff4757' : '#00d4aa';
-    }
-    const balIcon = document.getElementById('kpiBalanceIcon');
-    if (balIcon) balIcon.textContent = eod ? '📈' : '⚖️';
+
+  const netEl    = document.getElementById('kpiBalance');
+  const eodSubEl = document.getElementById('kpiBalanceEod');
+  const balIcon  = document.getElementById('kpiBalanceIcon');
+
+  if (!acm) {
+    if (netEl) { netEl.textContent = '—'; netEl.style.color = ''; }
+    if (eodSubEl) eodSubEl.textContent = '';
+    if (balIcon) balIcon.textContent = '⚖️';
+    return;
   }
+
+  // Bilancio attuale: calorie assunte finora - calorie bruciate finora
+  const netNow = calories_in - acm;
+  if (netEl) {
+    netEl.textContent = (netNow >= 0 ? '+' : '') + netNow + ' kcal';
+    netEl.style.color = netNow > 0 ? '#ff4757' : '#00d4aa';
+  }
+
+  // Bilancio stimato a fine giornata
+  if (eodSubEl) {
+    if (eodBurn && eodCalIn) {
+      const netEod = eodCalIn - eodBurn;
+      eodSubEl.textContent = `Stima fine giornata: ${netEod >= 0 ? '+' : ''}${netEod} kcal`;
+    } else {
+      eodSubEl.textContent = '';
+    }
+  }
+
+  if (balIcon) balIcon.textContent = eodBurn ? '📈' : '⚖️';
 }
 
 function openCalBruciateEdit() {
@@ -194,18 +216,6 @@ function renderKPIs(today) {
 
   const acm = today.active_calories_manual;
   _updateBruciateUI(acm, Math.round(today.calories_in));
-
-  // Se non c'è active_calories_manual usa calories_out come fallback per il bilancio
-  if (!acm) {
-    const net = Math.round(today.calories_in - today.calories_out);
-    const netEl = document.getElementById('kpiBalance');
-    if (netEl) {
-      netEl.textContent = (net >= 0 ? '+' : '') + net + ' kcal';
-      netEl.style.color = net > 0 ? '#ff4757' : '#00d4aa';
-    }
-    const balIcon = document.getElementById('kpiBalanceIcon');
-    if (balIcon) balIcon.textContent = '⚖️';
-  }
 
   setText('kpiCalGoal', '/ ' + today.calorie_goal + ' kcal');
   setText('kpiWeight', today.weight_kg ? today.weight_kg + ' kg' : '—');
