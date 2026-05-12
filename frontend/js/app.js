@@ -645,6 +645,7 @@ async function loadGoals() {
   const title = document.getElementById('goalsOverviewTitle');
   if (title) title.style.display = hasAnyGoal(data) ? '' : 'none';
   populateGoalForm(data.profile || {});
+  await loadObjectives();
 }
 
 function hasAnyGoal(data) {
@@ -720,6 +721,151 @@ async function saveGoals() {
   alert('✅ Obiettivi salvati!');
   loadGoals();
   loadOverview();
+}
+
+// ─── Objectives (new system) ──────────────────────────────────────
+let objectivesCurrentFilter = 'active';
+let objectivesCache = [];
+let editingObjectiveId = null;
+
+async function loadObjectives() {
+  if (!USER_ID) return;
+  const filter = objectivesCurrentFilter === 'all' ? null : objectivesCurrentFilter;
+  objectivesCache = await api.getObjectives(USER_ID, filter).catch(() => []);
+  renderObjectives(objectivesCache);
+}
+
+function filterObjectives(filter) {
+  objectivesCurrentFilter = filter;
+  document.querySelectorAll('.obj-filter').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.filter === filter);
+  });
+  loadObjectives();
+}
+
+function renderObjectives(objectives) {
+  const container = document.getElementById('objectivesList');
+  if (!container) return;
+
+  if (!objectives.length) {
+    container.innerHTML = '<p style="color:var(--text2)">Nessun obiettivo. Creane uno con il pulsante qui sopra.</p>';
+    return;
+  }
+
+  const STATUS_ICONS = { active: '🎯', achieved: '🏆', archived: '📦' };
+  const TYPE_LABELS  = { event: 'Evento', open: 'Aperto' };
+
+  container.innerHTML = objectives.map(o => {
+    const icon      = STATUS_ICONS[o.status] || '🎯';
+    const typeLabel = TYPE_LABELS[o.type] || o.type;
+    const pct       = Math.min(100, o.completion_pct || 0);
+
+    const daysLeft = o.target_date
+      ? Math.ceil((new Date(o.target_date) - new Date()) / 86400000)
+      : null;
+    const dateStr = o.target_date
+      ? new Date(o.target_date + 'T00:00:00').toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' })
+      : null;
+    const daysLabel = daysLeft !== null
+      ? daysLeft > 0 ? `· ${daysLeft} giorni al via` : daysLeft === 0 ? '· oggi!' : '· scaduto'
+      : '';
+
+    const progressHtml = o.total_sessions > 0 ? `
+      <div style="margin-top:.75rem">
+        <div style="display:flex;justify-content:space-between;font-size:.8rem;color:var(--text2);margin-bottom:.3rem">
+          <span>${o.completed_sessions || 0} / ${o.total_sessions} sessioni completate</span>
+          <span>${pct}%</span>
+        </div>
+        <div class="goal-card-bar"><div class="goal-card-fill fill-cycling" style="width:${pct}%"></div></div>
+      </div>` : '';
+
+    const planLabel = o.plan_name
+      ? `<span style="color:var(--accent);font-size:.8rem">📋 ${esc(o.plan_name)}</span>`
+      : '<span style="color:var(--text2);font-size:.8rem">Nessun piano collegato</span>';
+
+    return `
+      <div class="card" style="margin-bottom:.75rem">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div style="flex:1">
+            <div style="font-size:1.05rem;font-weight:600">${icon} ${esc(o.title)}</div>
+            <div style="color:var(--text2);font-size:.82rem;margin-top:.2rem">
+              ${typeLabel}${dateStr ? ' · ' + dateStr : ''} ${daysLabel}
+            </div>
+            ${o.description ? `<div style="color:var(--text2);font-size:.85rem;margin-top:.4rem">${esc(o.description)}</div>` : ''}
+            <div style="margin-top:.5rem">${planLabel}</div>
+            ${progressHtml}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:.3rem;margin-left:.75rem">
+            <button class="btn btn-sm btn-outline" onclick="openEditObjectiveModal('${o.objective_id}')">✏️</button>
+            ${o.status === 'active' ? `<button class="btn btn-sm btn-outline" onclick="markObjectiveAchieved('${o.objective_id}')" title="Segna come raggiunto">🏆</button>` : ''}
+            <button class="btn btn-sm btn-outline" onclick="deleteObjective('${o.objective_id}')">🗑</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function openAddObjectiveModal() {
+  editingObjectiveId = null;
+  setVal('objTitle', '');
+  setVal('objDescription', '');
+  setVal('objType', 'event');
+  setVal('objTargetDate', '');
+  setVal('objTargetValue', '');
+  setVal('objTargetUnit', '');
+  document.getElementById('objectiveModalTitle').textContent = 'Nuovo obiettivo';
+  openModal('modalObjective');
+}
+
+function openEditObjectiveModal(id) {
+  const o = objectivesCache.find(x => x.objective_id === id);
+  if (!o) return;
+  editingObjectiveId = id;
+  setVal('objTitle', o.title);
+  setVal('objDescription', o.description || '');
+  setVal('objType', o.type);
+  setVal('objTargetDate', o.target_date || '');
+  setVal('objTargetValue', o.target_value || '');
+  setVal('objTargetUnit', o.target_unit || '');
+  document.getElementById('objectiveModalTitle').textContent = 'Modifica obiettivo';
+  openModal('modalObjective');
+}
+
+async function saveObjective() {
+  const title = getVal('objTitle').trim();
+  if (!title) { alert('Inserisci il titolo'); return; }
+  const data = {
+    title,
+    description:  getVal('objDescription') || null,
+    type:         getVal('objType'),
+    target_date:  getVal('objTargetDate') || null,
+    target_value: parseFloatOrNull('objTargetValue'),
+    target_unit:  getVal('objTargetUnit') || null,
+  };
+  try {
+    if (editingObjectiveId) {
+      await api.updateObjective(editingObjectiveId, data);
+    } else {
+      await api.createObjective(USER_ID, data);
+    }
+    editingObjectiveId = null;
+    closeModal();
+    loadObjectives();
+  } catch (e) {
+    alert('Errore: ' + e.message);
+  }
+}
+
+async function markObjectiveAchieved(id) {
+  if (!confirm('Segna questo obiettivo come raggiunto?')) return;
+  await api.updateObjective(id, { status: 'achieved' });
+  loadObjectives();
+}
+
+async function deleteObjective(id) {
+  if (!confirm('Eliminare questo obiettivo?')) return;
+  await api.deleteObjective(id);
+  loadObjectives();
 }
 
 // ─── Health ───────────────────────────────────────────────────────

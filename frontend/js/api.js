@@ -84,4 +84,14 @@ const api = {
   addExercise:    (data) => apiFetch('/api/exercises/', { method: 'POST', body: data }),
   updateExercise: (id, data) => apiFetch(`/api/exercises/${id}`, { method: 'PUT', body: data }),
   deleteExercise: (id) => apiFetch(`/api/exercises/${id}`, { method: 'DELETE' }),
+
+  // Objectives
+  getObjectives:   (uid, status) => apiFetch(`/api/objectives/${uid}${status ? '?status='+status : ''}`),
+  createObjective: (uid, data) => apiFetch(`/api/objectives/${uid}`, { method: 'POST', body: data }),
+  updateObjective: (id, data) => apiFetch(`/api/objectives/${id}`, { method: 'PATCH', body: data }),
+  deleteObjective: (id) => apiFetch(`/api/objectives/${id}`, { method: 'DELETE' }),
+  saveCheckin:     (uid, data) => apiFetch(`/api/objectives/${uid}/checkin`, { method: 'POST', body: data }),
+  getCheckins:     (uid, days) => apiFetch(`/api/objectives/${uid}/checkin?days=${days || 30}`),
+  getTodayCheckin: (uid) => apiFetch(`/api/objectives/${uid}/checkin/today`),
+  saveActivityLog: (uid, data) => apiFetch(`/api/objectives/${uid}/log`, { method: 'POST', body: data }),
 };

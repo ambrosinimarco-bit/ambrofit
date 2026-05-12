@@ -137,67 +137,67 @@
       <section class="tab-content" id="tab-goals">
         <div class="page-title">Obiettivi</div>
 
-        <!-- Progress cards -->
-        <div id="goalsProgressCards" class="goals-grid"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <div style="display:flex;gap:.5rem">
+            <button class="btn btn-sm btn-outline obj-filter active" data-filter="active" onclick="filterObjectives('active')">Attivi</button>
+            <button class="btn btn-sm btn-outline obj-filter" data-filter="achieved" onclick="filterObjectives('achieved')">Raggiunti</button>
+            <button class="btn btn-sm btn-outline obj-filter" data-filter="all" onclick="filterObjectives('all')">Tutti</button>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openAddObjectiveModal()">+ Nuovo obiettivo</button>
+        </div>
 
-        <!-- Form impostazione obiettivi -->
+        <div id="objectivesList"></div>
+
+        <!-- Legacy numeric goals -->
         <div class="card" style="margin-top:1.5rem">
-          <h3>✏️ Imposta i tuoi obiettivi</h3>
-          <div class="goals-form-grid">
-
-            <div class="goal-form-block">
-              <div class="goal-form-title">⚖️ Peso corporeo</div>
-              <div class="form-row">
-                <div class="form-group">
-                  <label>Peso obiettivo (kg)</label>
-                  <input type="number" id="gGoalWeight" step="0.1" placeholder="72.0" />
-                </div>
-                <div class="form-group">
-                  <label>Entro il</label>
-                  <input type="date" id="gGoalWeightDate" />
+          <h3 style="margin-bottom:1rem">📊 Obiettivi numerici annuali</h3>
+          <div id="goalsProgressCards" class="goals-grid"></div>
+          <details style="margin-top:1rem">
+            <summary style="cursor:pointer;color:var(--text2);font-size:.85rem">Modifica obiettivi numerici</summary>
+            <div class="goals-form-grid" style="margin-top:1rem">
+              <div class="goal-form-block">
+                <div class="goal-form-title">⚖️ Peso corporeo</div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Peso obiettivo (kg)</label>
+                    <input type="number" id="gGoalWeight" step="0.1" placeholder="72.0" />
+                  </div>
+                  <div class="form-group">
+                    <label>Entro il</label>
+                    <input type="date" id="gGoalWeightDate" />
+                  </div>
                 </div>
               </div>
-            </div>
-
-            <div class="goal-form-block">
-              <div class="goal-form-title">🚴 Ciclismo</div>
-              <div class="form-row">
+              <div class="goal-form-block">
+                <div class="goal-form-title">🚴 Ciclismo</div>
                 <div class="form-group">
                   <label>Km totali per quest'anno</label>
                   <input type="number" id="gGoalCycling" placeholder="3000" />
                 </div>
               </div>
-            </div>
-
-            <div class="goal-form-block">
-              <div class="goal-form-title">🏃 Corsa</div>
-              <div class="form-row">
+              <div class="goal-form-block">
+                <div class="goal-form-title">🏃 Corsa</div>
                 <div class="form-group">
                   <label>Km totali per quest'anno</label>
                   <input type="number" id="gGoalRunning" placeholder="500" />
                 </div>
               </div>
-            </div>
-
-            <div class="goal-form-block">
-              <div class="goal-form-title">👟 Passi</div>
-              <div class="form-row">
+              <div class="goal-form-block">
+                <div class="goal-form-title">👟 Passi</div>
                 <div class="form-group">
                   <label>Obiettivo passi giornalieri</label>
                   <input type="number" id="gGoalSteps" placeholder="10000" />
                 </div>
               </div>
-            </div>
-
-            <div class="goal-form-block" style="grid-column:1/-1">
-              <div class="goal-form-title">📝 Altri obiettivi</div>
-              <div class="form-group">
-                <textarea id="gGoalCustom" rows="3" placeholder="es. Completare una gran fondo, fare 3 sessioni di yoga a settimana..."></textarea>
+              <div class="goal-form-block" style="grid-column:1/-1">
+                <div class="goal-form-title">📝 Note libere</div>
+                <div class="form-group">
+                  <textarea id="gGoalCustom" rows="2" placeholder="es. Completare una gran fondo..."></textarea>
+                </div>
               </div>
             </div>
-
-          </div>
-          <button class="btn btn-primary" style="margin-top:1rem" onclick="saveGoals()">Salva obiettivi</button>
+            <button class="btn btn-primary" style="margin-top:1rem" onclick="saveGoals()">Salva</button>
+          </details>
         </div>
       </section>
 
@@ -816,6 +816,51 @@
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
       <button class="btn btn-primary" id="foodEditSaveBtn" onclick="saveFoodEdit()">Salva</button>
+    </div>
+  </div>
+
+  <!-- Objective modal -->
+  <div class="modal" id="modalObjective">
+    <div class="modal-header">
+      <h3 id="objectiveModalTitle">Nuovo obiettivo</h3>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Titolo *</label>
+        <input type="text" id="objTitle" placeholder="es. Completare il Novecolli" />
+      </div>
+      <div class="form-group">
+        <label>Descrizione</label>
+        <textarea id="objDescription" rows="2" placeholder="Dettagli, motivazioni..."></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Tipo</label>
+          <select id="objType">
+            <option value="event">Evento con scadenza</option>
+            <option value="open">Obiettivo aperto</option>
+          </select>
+        </div>
+        <div class="form-group" id="objTargetDateGroup">
+          <label>Data obiettivo</label>
+          <input type="date" id="objTargetDate" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Valore target (opzionale)</label>
+          <input type="number" id="objTargetValue" placeholder="es. 200" step="0.1" />
+        </div>
+        <div class="form-group">
+          <label>Unità</label>
+          <input type="text" id="objTargetUnit" placeholder="es. W, km, kg" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
+      <button class="btn btn-primary" onclick="saveObjective()">Salva</button>
     </div>
   </div>
 
