@@ -100,21 +100,21 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
     calorie_goal = user_data.get("daily_calorie_goal", 2400)
 
     # ── Macro targets ────────────────────────────────────────────────────────
+    # calc_dynamic_macros expects full TDEE. active_calories_manual is the active
+    # portion only (iPhone "Active Energy"), so add BMR back for macro calculation
+    # to avoid protein_g exceeding total calories and producing nonsensical carbs.
     _has_reliable_cal = bool(total_calories_iphone or bmr or active_calories_manual)
     if _has_reliable_cal and weight_kg:
-        print(f"[macros_input] calories_out={calories_out} weight_kg={weight_kg} _has_reliable_cal={_has_reliable_cal}", flush=True)
-        protein_goal, carbs_goal, fat_goal = calc_dynamic_macros(calories_out, float(weight_kg))
-        print(f"[macros_output] protein={protein_goal} carbs={carbs_goal} fat={fat_goal}", flush=True)
+        if active_calories_manual and not total_calories_iphone and bmr:
+            calories_for_macros = bmr + active_calories_manual
+        else:
+            calories_for_macros = calories_out
+        protein_goal, carbs_goal, fat_goal = calc_dynamic_macros(calories_for_macros, float(weight_kg))
         macro_targets_dynamic = True
-        print(
-            f"[calc_dynamic_macros] input: calories_out={calories_out!r} weight_kg={float(weight_kg)!r}"
-            f" → protein_goal={protein_goal} carbs_goal={carbs_goal} fat_goal={fat_goal}",
-            flush=True,
-        )
         logger.info(
-            "macro targets DYNAMIC | cal_iphone=%s bmr=%s acm=%s cal_out=%.0f weight=%.1f "
+            "macro targets DYNAMIC | cal_iphone=%s bmr=%s acm=%s cal_for_macros=%.0f weight=%.1f "
             "→ P=%dg C=%dg F=%dg",
-            total_calories_iphone, bmr, active_calories_manual, calories_out, weight_kg,
+            total_calories_iphone, bmr, active_calories_manual, calories_for_macros, weight_kg,
             protein_goal, carbs_goal, fat_goal,
         )
     else:
