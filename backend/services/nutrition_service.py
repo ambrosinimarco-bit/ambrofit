@@ -102,7 +102,9 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
     # ── Macro targets ────────────────────────────────────────────────────────
     _has_reliable_cal = bool(total_calories_iphone or bmr or active_calories_manual)
     if _has_reliable_cal and weight_kg:
+        print(f"[macros_input] calories_out={calories_out} weight_kg={weight_kg} _has_reliable_cal={_has_reliable_cal}", flush=True)
         protein_goal, carbs_goal, fat_goal = calc_dynamic_macros(calories_out, float(weight_kg))
+        print(f"[macros_output] protein={protein_goal} carbs={carbs_goal} fat={fat_goal}", flush=True)
         macro_targets_dynamic = True
         print(
             f"[calc_dynamic_macros] input: calories_out={calories_out!r} weight_kg={float(weight_kg)!r}"
