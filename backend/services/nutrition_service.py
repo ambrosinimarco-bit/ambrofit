@@ -89,10 +89,13 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
         if elapsed_hours >= 1:
             estimated_eod_calories = max(1900, round(active_calories_manual / elapsed_hours * 22))
 
+    if active_calories_manual:
+        calories_out = active_calories_manual
+
     calorie_goal = user_data.get("daily_calorie_goal", 2400)
 
     # ── Macro targets ────────────────────────────────────────────────────────
-    _has_reliable_cal = bool(total_calories_iphone or bmr)
+    _has_reliable_cal = bool(total_calories_iphone or bmr or active_calories_manual)
     if _has_reliable_cal and weight_kg:
         protein_goal, carbs_goal, fat_goal = calc_dynamic_macros(calories_out, float(weight_kg))
         macro_targets_dynamic = True
