@@ -914,6 +914,7 @@ async function loadSettings() {
   setVal('settingName', profile.name);
   setVal('settingAge', profile.age);
   setVal('settingHeight', profile.height_cm);
+  setVal('settingWeight', profile.weight_kg);
   setVal('settingGoal', profile.goal);
   setVal('settingCalories', profile.daily_calorie_goal);
   setVal('settingProtein', profile.protein_goal_g);
@@ -933,6 +934,7 @@ async function saveSettings() {
     name: getVal('settingName'),
     age: parseIntOrNull2('settingAge'),
     height_cm: parseFloatOrNull('settingHeight'),
+    weight_kg: parseFloatOrNull('settingWeight'),
     goal: getVal('settingGoal'),
     daily_calorie_goal: parseInt(getVal('settingCalories')) || 2400,
     protein_goal_g: parseInt(getVal('settingProtein')) || 150,
