@@ -115,19 +115,13 @@ async function loadOverview() {
   loadGoals();
 }
 
-function renderKPIs(today) {
-  setText('kpiCalIn', Math.round(today.calories_in) + ' kcal');
-
-  // ── Card "Calorie bruciate": mostra active_calories_manual ────────
-  const acm = today.active_calories_manual;
+// Aggiorna card Calorie bruciate + EOD + Bilancio con un valore di `acm`.
+// `calIn` è opzionale: se omesso lo legge dal DOM (usato dopo save immediato).
+function _updateBruciateUI(acm, calIn) {
+  // Card superiore
   setText('kpiCalOut', acm ? acm + ' kcal' : '—');
-  const sourceEl = document.getElementById('kpiCalOutSource');
-  if (sourceEl) sourceEl.textContent = '';
 
-  // Popola il campo input con il valore salvato
-  if (acm) setVal('inputBruciateAttuali', acm);
-
-  // ── Stima EOD ─────────────────────────────────────────────────────
+  // EOD
   const eodEl  = document.getElementById('kpiCalEod');
   const noteEl = document.getElementById('kpiCalEodNote');
   const now     = new Date();
@@ -141,14 +135,40 @@ function renderKPIs(today) {
     ? `proiezione ore ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`
     : '';
 
-  // ── Bilancio usa sempre la stima EOD ──────────────────────────────
-  const burnForBalance = eod ?? Math.round(today.calories_out);
-  const net = Math.round(today.calories_in) - burnForBalance;
-  const netEl = document.getElementById('kpiBalance');
-  netEl.textContent = (net >= 0 ? '+' : '') + net + ' kcal';
-  netEl.style.color = net > 0 ? '#ff4757' : '#00d4aa';
-  const balIcon = document.getElementById('kpiBalanceIcon');
-  if (balIcon) balIcon.textContent = eod ? '📈' : '⚖️';
+  // Bilancio
+  const calories_in = calIn ?? parseInt(document.getElementById('kpiCalIn')?.textContent) || 0;
+  const burnForBalance = eod ?? acm ?? 0;
+  if (burnForBalance > 0) {
+    const net = calories_in - burnForBalance;
+    const netEl = document.getElementById('kpiBalance');
+    if (netEl) {
+      netEl.textContent = (net >= 0 ? '+' : '') + net + ' kcal';
+      netEl.style.color = net > 0 ? '#ff4757' : '#00d4aa';
+    }
+    const balIcon = document.getElementById('kpiBalanceIcon');
+    if (balIcon) balIcon.textContent = eod ? '📈' : '⚖️';
+  }
+}
+
+function renderKPIs(today) {
+  setText('kpiCalIn', Math.round(today.calories_in) + ' kcal');
+
+  const acm = today.active_calories_manual;
+  if (acm) setVal('inputBruciateAttuali', acm);
+
+  _updateBruciateUI(acm, Math.round(today.calories_in));
+
+  // Se non c'è active_calories_manual usa calories_out come fallback per il bilancio
+  if (!acm) {
+    const net = Math.round(today.calories_in - today.calories_out);
+    const netEl = document.getElementById('kpiBalance');
+    if (netEl) {
+      netEl.textContent = (net >= 0 ? '+' : '') + net + ' kcal';
+      netEl.style.color = net > 0 ? '#ff4757' : '#00d4aa';
+    }
+    const balIcon = document.getElementById('kpiBalanceIcon');
+    if (balIcon) balIcon.textContent = '⚖️';
+  }
 
   setText('kpiCalGoal', '/ ' + today.calorie_goal + ' kcal');
   setText('kpiWeight', today.weight_kg ? today.weight_kg + ' kg' : '—');
@@ -163,6 +183,9 @@ async function saveBruciateAttuali() {
   const d = overviewDate || new Date().toLocaleDateString('sv-SE');
   try {
     await api.saveHealth({ user_id: USER_ID, health_date: d, active_calories_manual: val });
+    // Aggiornamento immediato senza attendere il re-fetch
+    _updateBruciateUI(val);
+    // Re-fetch in background per allineare tutti i dati
     loadOverview();
   } catch (e) {
     alert('Errore nel salvataggio: ' + e.message);

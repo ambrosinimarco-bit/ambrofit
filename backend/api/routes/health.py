@@ -120,7 +120,8 @@ def upsert_health(health: DailyHealthCreate):
 def update_health(health_id: str, data: dict):
     db = get_supabase()
     safe_fields = {"weight_kg", "sleep_hours", "steps", "body_battery", "hrv_ms",
-                   "stress_score", "resting_hr", "total_calories_iphone", "notes"}
+                   "stress_score", "resting_hr", "total_calories_iphone",
+                   "active_calories_manual", "notes"}
     safe_data = {k: v for k, v in data.items() if k in safe_fields and v is not None}
     result = db.table("daily_health").update(safe_data).eq("id", health_id).execute()
     if not result.data:
