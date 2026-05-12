@@ -73,19 +73,18 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
     logger.debug("BMR inputs: weight_kg=%s height_cm=%s age=%s → bmr=%s", weight_kg, height, age, bmr)
 
     # ── Calorie bruciate ─────────────────────────────────────────────────────
+    # Priority: 1) total_calories_iphone  2) active_calories_manual  3) bmr+activities
+    # active_calories_manual already includes basal burn — do NOT add bmr on top.
     total_calories_iphone = health_data.get("total_calories_iphone")
     active_calories_manual = health_data.get("active_calories_manual")
     if total_calories_iphone:
         calories_out = total_calories_iphone
+    elif active_calories_manual:
+        calories_out = active_calories_manual
     elif bmr:
         calories_out = bmr + activities_calories
     else:
         calories_out = activities_calories
-
-    # active_calories_manual = calorie attive tracciate manualmente dall'utente.
-    # Vince su stime BMR perché è un dato reale; lo sommiamo al BMR (riposo) se disponibile.
-    if active_calories_manual and active_calories_manual > (activities_calories or 0):
-        calories_out = (bmr + active_calories_manual) if bmr else active_calories_manual
 
     # ── Stima calorie a fine giornata ────────────────────────────────────────
     # Proietta le calorie attuali al ritmo corrente fino alle ore 22:00.
