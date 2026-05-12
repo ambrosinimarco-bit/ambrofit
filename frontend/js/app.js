@@ -137,7 +137,9 @@ function _updateBruciateUI(acm, calIn) {
     : '';
 
   // Bilancio
-  const calories_in = calIn ?? parseInt(document.getElementById('kpiCalIn')?.textContent) || 0;
+  const calories_in = calIn !== undefined && calIn !== null
+    ? calIn
+    : (parseInt(document.getElementById('kpiCalIn')?.textContent) || 0);
   const burnForBalance = eod ?? acm ?? 0;
   if (burnForBalance > 0) {
     const net = calories_in - burnForBalance;
