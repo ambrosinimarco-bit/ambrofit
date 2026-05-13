@@ -89,7 +89,7 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
     calorie_goal = user_data.get("daily_calorie_goal", 2400)
 
     # ── Macro targets — always dynamic ──────────────────────────────────────
-    calories_for_macros = active_calories_manual if active_calories_manual else 1900
+    calories_for_macros = estimated_eod_calories if estimated_eod_calories else 1900
     protein_goal, carbs_goal, fat_goal = calc_dynamic_macros(calories_for_macros, float(weight_kg)) if weight_kg else (user_data.get("protein_goal_g", 150), user_data.get("carbs_goal_g", 203), user_data.get("fat_goal_g", 75))
     macro_targets_dynamic = True
 
