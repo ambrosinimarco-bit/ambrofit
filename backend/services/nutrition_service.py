@@ -71,15 +71,11 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
     logger.debug("BMR inputs: weight_kg=%s height_cm=%s age=%s → bmr=%s", weight_kg, height, age, bmr)
 
     # ── Calorie bruciate ─────────────────────────────────────────────────────
-    # Priority: 1) active_calories_manual  2) total_calories_iphone  3) 1900 baseline
+    # total_calories_iphone is fetched for the return dict only — never used in calculations.
+    # calories_out and calories_for_macros are derived solely from active_calories_manual.
     total_calories_iphone = health_data.get("total_calories_iphone")
     active_calories_manual = health_data.get("active_calories_manual")
-    if active_calories_manual:
-        calories_out = active_calories_manual
-    elif total_calories_iphone:
-        calories_out = total_calories_iphone
-    else:
-        calories_out = 1900
+    calories_out = active_calories_manual if active_calories_manual else 1900
 
     # ── Stima calorie a fine giornata ────────────────────────────────────────
     estimated_eod_calories: int | None = None
