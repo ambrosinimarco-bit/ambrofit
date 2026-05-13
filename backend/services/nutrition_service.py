@@ -12,7 +12,13 @@ def calculate_bmr(weight_kg: float, height_cm: float, age: int, sex: str = "male
 
 
 def calc_dynamic_macros(calories_out: float, weight_kg: float) -> tuple[int, int, int]:
-    protein_g = round(weight_kg * 2)
+    if calories_out < 2000:
+        protein_multiplier = 1.6
+    elif calories_out <= 2500:
+        protein_multiplier = 1.8
+    else:
+        protein_multiplier = 2.0
+    protein_g = round(weight_kg * protein_multiplier)
     fat_g = round(calories_out * 0.25 / 9)
     carbs_kcal = calories_out - (protein_g * 4) - (fat_g * 9)
     carbs_g = max(50, round(carbs_kcal / 4))
