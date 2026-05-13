@@ -93,15 +93,16 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
     calorie_goal = user_data.get("daily_calorie_goal", 2400)
 
     # ── Macro targets — always dynamic ──────────────────────────────────────
-    calories_for_macros = estimated_eod_calories if estimated_eod_calories else calories_out
+    # calories_for_macros is independent of calories_out (balance display).
+    # estimated_eod_calories is UI-only and never used here.
+    calories_for_macros = active_calories_manual if active_calories_manual else 1900
     if weight_kg:
         protein_goal, carbs_goal, fat_goal = calc_dynamic_macros(calories_for_macros, float(weight_kg))
         macro_targets_dynamic = True
         logger.info(
-            "macro targets DYNAMIC | acm=%s cal_iphone=%s cal_out=%.0f eod=%s cal_for_macros=%.0f weight=%.1f "
-            "→ P=%dg C=%dg F=%dg",
-            active_calories_manual, total_calories_iphone, calories_out, estimated_eod_calories,
-            calories_for_macros, weight_kg, protein_goal, carbs_goal, fat_goal,
+            "macro targets DYNAMIC | acm=%s cal_for_macros=%.0f weight=%.1f → P=%dg C=%dg F=%dg",
+            active_calories_manual, calories_for_macros, weight_kg,
+            protein_goal, carbs_goal, fat_goal,
         )
     else:
         protein_goal = user_data.get("protein_goal_g", 150)
