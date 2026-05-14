@@ -434,6 +434,8 @@ Profilo utente:
 
 Richiesta: "{request}"
 
+Genera MASSIMO 2 settimane di sessioni, non di più.
+
 Rispondi con JSON esatto:
 {{
   "plan_name": "nome piano",
@@ -447,7 +449,7 @@ Rispondi con JSON esatto:
       "day_of_week": "monday|tuesday|wednesday|thursday|friday|saturday|sunday",
       "activity_type": "run|ride|swim|walk|strength|yoga|other",
       "title": "titolo sessione",
-      "description": "descrizione dettagliata con esercizi",
+      "description": "descrizione breve max 100 caratteri",
       "duration_target_min": 0,
       "distance_target_km": null,
       "intensity": "easy|moderate|hard"
@@ -458,7 +460,7 @@ Rispondi con JSON esatto:
 
     response = client.messages.create(
         model="claude-opus-4-7",
-        max_tokens=8000,
+        max_tokens=4000,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
