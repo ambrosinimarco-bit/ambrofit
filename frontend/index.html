@@ -868,6 +868,41 @@
     </div>
   </div>
 
+  <!-- Create Plan Modal -->
+  <div class="modal" id="modalCreatePlan">
+    <div class="modal-header">
+      <h3>📋 Crea piano di allenamento</h3>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="createPlanObjectiveTitle" style="font-weight:600;font-size:1rem;margin-bottom:1rem;color:var(--accent)"></div>
+      <div class="form-group">
+        <label>Sessioni per settimana</label>
+        <input type="number" id="planWeeklySessions" value="4" min="1" max="7" />
+      </div>
+      <div class="form-group">
+        <label>Discipline</label>
+        <div style="display:flex;flex-wrap:wrap;gap:.5rem .75rem;margin-top:.35rem">
+          <label style="display:flex;align-items:center;gap:.35rem;font-weight:400"><input type="checkbox" name="planDiscipline" value="ride" checked /> Ciclismo</label>
+          <label style="display:flex;align-items:center;gap:.35rem;font-weight:400"><input type="checkbox" name="planDiscipline" value="run" /> Corsa</label>
+          <label style="display:flex;align-items:center;gap:.35rem;font-weight:400"><input type="checkbox" name="planDiscipline" value="walk" /> Camminata</label>
+          <label style="display:flex;align-items:center;gap:.35rem;font-weight:400"><input type="checkbox" name="planDiscipline" value="strength" /> Forza</label>
+          <label style="display:flex;align-items:center;gap:.35rem;font-weight:400"><input type="checkbox" name="planDiscipline" value="body_weight" /> Corpo libero</label>
+          <label style="display:flex;align-items:center;gap:.35rem;font-weight:400"><input type="checkbox" name="planDiscipline" value="yoga" /> Yoga</label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Note per il coach (preferenze, vincoli, disponibilità orari...)</label>
+        <textarea id="planNotes" rows="3" placeholder="es. Preferisco allenarmi la mattina, ho un'uscita lunga il sabato..."></textarea>
+      </div>
+      <div id="createPlanStatus" style="display:none;margin-top:.75rem;color:var(--text2);font-size:.9rem"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
+      <button class="btn btn-primary" id="createPlanConfirmBtn" onclick="generatePlan()">Crea piano</button>
+    </div>
+  </div>
+
   <script src="/static/js/api.js"></script>
   <script src="/static/js/charts.js"></script>
   <script src="/static/js/app.js"></script>

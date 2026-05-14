@@ -85,6 +85,9 @@ const api = {
   updateExercise: (id, data) => apiFetch(`/api/exercises/${id}`, { method: 'PUT', body: data }),
   deleteExercise: (id) => apiFetch(`/api/exercises/${id}`, { method: 'DELETE' }),
 
+  // Training plan creation
+  createPlan: (userId, data) => apiFetch(`/api/training/plan/${userId}`, { method: 'POST', body: data }),
+
   // Objectives
   getObjectives:   (uid, status) => apiFetch(`/api/objectives/${uid}${status ? '?status='+status : ''}`),
   createObjective: (uid, data) => apiFetch(`/api/objectives/${uid}`, { method: 'POST', body: data }),

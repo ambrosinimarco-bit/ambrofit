@@ -794,6 +794,7 @@ function renderObjectives(objectives) {
             ${o.description ? `<div style="color:var(--text2);font-size:.85rem;margin-top:.4rem">${esc(o.description)}</div>` : ''}
             <div style="margin-top:.5rem">${planLabel}</div>
             ${progressHtml}
+            ${o.status === 'active' ? `<button class="btn btn-sm btn-outline" style="margin-top:.6rem" onclick="openCreatePlanModal('${o.objective_id}')">📋 Crea piano</button>` : ''}
           </div>
           <div style="display:flex;flex-direction:column;gap:.3rem;margin-left:.75rem">
             <button class="btn btn-sm btn-outline" onclick="openEditObjectiveModal('${o.objective_id}')">✏️</button>
@@ -803,6 +804,59 @@ function renderObjectives(objectives) {
         </div>
       </div>`;
   }).join('');
+}
+
+let _createPlanObjectiveId = null;
+
+function openCreatePlanModal(objectiveId) {
+  const o = objectivesCache.find(x => x.objective_id === objectiveId);
+  _createPlanObjectiveId = objectiveId;
+  document.getElementById('createPlanObjectiveTitle').textContent = o ? o.title : '';
+  setVal('planWeeklySessions', '4');
+  setVal('planNotes', '');
+  document.querySelectorAll('input[name="planDiscipline"]').forEach(cb => {
+    cb.checked = cb.value === 'ride';
+  });
+  const status = document.getElementById('createPlanStatus');
+  status.style.display = 'none';
+  status.textContent = '';
+  document.getElementById('createPlanConfirmBtn').disabled = false;
+  openModal('modalCreatePlan');
+}
+
+async function generatePlan() {
+  if (!USER_ID) return;
+  const o = objectivesCache.find(x => x.objective_id === _createPlanObjectiveId);
+  const disciplines = [...document.querySelectorAll('input[name="planDiscipline"]:checked')].map(cb => cb.value);
+  if (!disciplines.length) { alert('Seleziona almeno una disciplina'); return; }
+
+  const payload = {
+    objective_id:    _createPlanObjectiveId || null,
+    weekly_sessions: parseInt(getVal('planWeeklySessions'), 10) || 4,
+    disciplines,
+    notes:           getVal('planNotes').trim() || null,
+    target_date:     o?.target_date || null,
+  };
+
+  const statusEl = document.getElementById('createPlanStatus');
+  const btn = document.getElementById('createPlanConfirmBtn');
+  statusEl.textContent = '⏳ Generazione piano in corso... (20-30 secondi)';
+  statusEl.style.display = 'block';
+  btn.disabled = true;
+
+  try {
+    await api.createPlan(USER_ID, payload);
+    closeModal();
+    alert('Piano creato con successo!');
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.querySelector('[data-tab="training"]').classList.add('active');
+    document.getElementById('tab-training').classList.add('active');
+    loadTraining();
+  } catch (e) {
+    statusEl.textContent = 'Errore: ' + e.message;
+    btn.disabled = false;
+  }
 }
 
 function openAddObjectiveModal() {
