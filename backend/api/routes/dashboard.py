@@ -89,6 +89,7 @@ def calorie_trend(user_id: str, days: int = 30):
     return result
 
 
+
 @router.get("/suggest-workout/{user_id}")
 def suggest_workout(user_id: str, available_time: int = 45):
     db = get_supabase()
