@@ -35,6 +35,10 @@ def create_plan_from_claude(user_id: str, request: str, objective_id: str | None
     duration_weeks = claude_plan.get("duration_weeks", 8)
     end_date = start_date + timedelta(weeks=duration_weeks)
 
+    existing = db.table("training_plans").select("id").eq("user_id", user_id).execute()
+    existing_ids = [p["id"] for p in (existing.data or [])]
+    if existing_ids:
+        db.table("training_sessions").delete().in_("plan_id", existing_ids).execute()
     db.table("training_plans").update({"is_active": False}).eq("user_id", user_id).execute()
 
     plan_row = {
