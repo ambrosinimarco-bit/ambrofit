@@ -86,6 +86,24 @@ def create_plan_from_claude(user_id: str, request: str, objective_id: str | None
     if sessions_to_insert:
         db.table("training_sessions").insert(sessions_to_insert).execute()
 
+    if objective_id:
+        obj_res = db.table("objectives").select("title,target_date").eq("id", objective_id).limit(1).execute()
+        obj = (obj_res.data or [{}])[0]
+        race_date = obj.get("target_date")
+        race_title = obj.get("title") or "GARA"
+        if race_date:
+            db.table("training_sessions").insert({
+                "plan_id": plan_id,
+                "user_id": user_id,
+                "scheduled_date": race_date,
+                "activity_type": "race",
+                "title": race_title,
+                "description": "Giorno della gara",
+                "duration_target_min": 0,
+                "intensity": "race",
+                "status": "race",
+            }).execute()
+
     return {**plan, "sessions_created": len(sessions_to_insert), "claude_notes": claude_plan.get("notes", "")}
 
 

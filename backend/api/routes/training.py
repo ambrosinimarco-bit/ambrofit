@@ -86,7 +86,7 @@ def adjust_plan_endpoint(user_id: str, adjustment: PlanAdjustmentRequest):
 @router.patch("/session/{session_id}")
 def update_session(session_id: str, data: dict):
     db = get_supabase()
-    allowed = {"status", "notes", "description", "intensity", "duration_target_min"}
+    allowed = {"status", "notes", "description", "intensity", "duration_target_min", "title", "scheduled_date"}
     safe_data = {k: v for k, v in data.items() if k in allowed}
     result = db.table("training_sessions").update(safe_data).eq("id", session_id).execute()
     if not result.data:

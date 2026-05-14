@@ -528,9 +528,13 @@ async function deleteActivity(id) {
 }
 
 // ─── Training ─────────────────────────────────────────────────────
+let _lastTrainingData = { plan: null, sessions: [] };
+
 async function loadTraining() {
   if (!USER_ID) return;
-  const { plan, sessions } = await api.getPlan(USER_ID).catch(() => ({ plan: null, sessions: [] }));
+  const data = await api.getPlan(USER_ID).catch(() => ({ plan: null, sessions: [] }));
+  _lastTrainingData = data;
+  const { plan, sessions } = data;
   renderPlanHeader(plan);
   renderSessions(sessions);
   // Default ICS week start to current Monday
@@ -565,14 +569,28 @@ function renderSessions(sessions) {
   const container = document.getElementById('trainingSessions');
   if (!sessions.length) { container.innerHTML = '<p style="color:var(--text2)">Nessuna sessione pianificata</p>'; return; }
 
-  const STATUS_LABELS = { planned: 'Pianificata', completed: 'Completata', skipped: 'Saltata', modified: 'Modificata' };
+  const STATUS_LABELS = { planned: 'Pianificata', completed: 'Completata', skipped: 'Saltata', modified: 'Modificata', race: 'Gara' };
 
   container.innerHTML = sessions.slice(0, 30).map(s => {
     const d = new Date(s.scheduled_date + 'T00:00:00');
     const dayName = d.toLocaleDateString('it-IT', { weekday: 'short' });
     const dayNum = d.getDate();
-    const icon = ACTIVITY_ICONS[s.activity_type] || '⚡';
 
+    if (s.status === 'race') {
+      return `
+        <div class="session-card" style="border:2px solid gold;background:linear-gradient(135deg,rgba(255,215,0,.08),rgba(255,165,0,.04))">
+          <div class="session-date">
+            <div class="session-day">${dayName}</div>
+            <div class="session-dd">${dayNum}</div>
+          </div>
+          <div class="session-info">
+            <div class="session-title" style="color:gold;font-size:1.05rem">🏆 ${esc(s.title)}</div>
+            <div class="session-desc">${esc(s.description)}</div>
+          </div>
+        </div>`;
+    }
+
+    const icon = ACTIVITY_ICONS[s.activity_type] || '⚡';
     return `
       <div class="session-card">
         <div class="session-date">
@@ -590,6 +608,7 @@ function renderSessions(sessions) {
           </div>
         </div>
         <div style="display:flex;flex-direction:column;gap:.35rem">
+          <button class="btn btn-sm btn-outline" onclick="openEditSessionModal('${s.id}')">✏️</button>
           <button class="btn btn-sm btn-outline" onclick="markSession('${s.id}','completed')">✅</button>
           <button class="btn btn-sm btn-outline" onclick="markSession('${s.id}','skipped')">⏭</button>
         </div>
@@ -601,6 +620,43 @@ function renderSessions(sessions) {
 async function markSession(id, status) {
   await api.updateSession(id, { status });
   loadTraining();
+}
+
+let _editingSessionId = null;
+
+function openEditSessionModal(sessionId) {
+  _editingSessionId = sessionId;
+  const { plan, sessions } = _lastTrainingData || {};
+  const s = (sessions || []).find(x => x.id === sessionId);
+  if (s) {
+    setVal('editSessionDate', s.scheduled_date);
+    setVal('editSessionTitle', s.title);
+    setVal('editSessionDesc', s.description);
+    setVal('editSessionDuration', s.duration_target_min);
+    setVal('editSessionIntensity', s.intensity);
+    setVal('editSessionNotes', s.notes || '');
+  }
+  openModal('modalEditSession');
+}
+
+async function saveSessionEdit() {
+  if (!_editingSessionId) return;
+  const data = {
+    scheduled_date:      getVal('editSessionDate') || undefined,
+    title:               getVal('editSessionTitle') || undefined,
+    description:         getVal('editSessionDesc') || undefined,
+    duration_target_min: parseInt(getVal('editSessionDuration'), 10) || undefined,
+    intensity:           getVal('editSessionIntensity') || undefined,
+    notes:               getVal('editSessionNotes') || undefined,
+  };
+  Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
+  try {
+    await api.updateSession(_editingSessionId, data);
+    closeModal();
+    loadTraining();
+  } catch (e) {
+    alert('Errore nel salvataggio: ' + e.message);
+  }
 }
 
 async function loadSuggestedWorkout() {

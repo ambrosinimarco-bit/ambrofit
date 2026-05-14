@@ -435,7 +435,9 @@ Profilo utente:
 Richiesta: "{request}"
 
 Genera MASSIMO 2 settimane di sessioni, non di più.
-Il giorno dell'evento obiettivo (target_date) NON deve avere sessioni di allenamento — è il giorno della gara. L'ultimo allenamento deve essere almeno 2 giorni prima dell'evento.
+Il piano deve terminare il giorno prima dell'evento (target_date - 1 giorno). NON generare sessioni dopo la target_date.
+Il giorno della target_date è il giorno della GARA, non un allenamento.
+Gli ultimi 2 giorni prima della gara devono essere riposo o recupero leggerissimo.
 
 Rispondi con JSON esatto:
 {{
