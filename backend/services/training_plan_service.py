@@ -77,7 +77,7 @@ def create_plan_from_claude(user_id: str, request: str, objective_id: str | None
             "activity_type": s.get("activity_type", "other"),
             "title": s.get("title", "Sessione"),
             "description": s.get("description", ""),
-            "duration_target_min": s.get("duration_target_min", 45),
+            "duration_target_min": s.get("duration_target_min") or 0,
             "distance_target_km": s.get("distance_target_km"),
             "intensity": s.get("intensity", "moderate"),
             "status": "planned",
