@@ -24,12 +24,12 @@ def get_plan_sessions(plan_id: str, from_date: date | None = None) -> list[dict]
     return result.data or []
 
 
-def create_plan_from_claude(user_id: str, request: str, objective_id: str | None = None) -> dict:
+def create_plan_from_claude(user_id: str, request: str, objective_id: str | None = None, target_date: str | None = None) -> dict:
     db = get_supabase()
     user = db.table("user_profiles").select("*").eq("id", user_id).single().execute()
     user_profile = user.data or {}
 
-    claude_plan = generate_training_plan(user_profile, request)
+    claude_plan = generate_training_plan(user_profile, request, target_date=target_date)
 
     start_date = date.today()
     duration_weeks = claude_plan.get("duration_weeks", 8)

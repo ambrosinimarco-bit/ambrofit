@@ -412,7 +412,7 @@ def _parse_claude_json(response, prompt: str, system: str) -> dict:
         return json.loads(combined)
 
 
-def generate_training_plan(user_profile: dict, request: str) -> dict:
+def generate_training_plan(user_profile: dict, request: str, target_date: str | None = None) -> dict:
     """Genera un piano di allenamento personalizzato."""
     profile_block_parts = []
     if user_profile.get("age"):
@@ -427,7 +427,20 @@ def generate_training_plan(user_profile: dict, request: str) -> dict:
         profile_block_parts.append(f"- Note coaching: {user_profile['coaching_notes']}")
     profile_block = "\n".join(profile_block_parts) or "- Nessun profilo disponibile"
 
-    prompt = f"""Crea un piano di allenamento personalizzato.
+    if target_date:
+        rules_block = f"""REGOLE OBBLIGATORIE:
+- La data dell'evento è {target_date}. Questo è il giorno della GARA.
+- NON inserire NESSUNA sessione di allenamento il giorno {target_date}.
+- NON inserire NESSUNA sessione dopo il {target_date}.
+- Il piano termina il {target_date} con solo il marker della gara.
+- Il giorno {target_date} - 1 deve essere riposo completo.
+- Il giorno {target_date} - 2 può avere al massimo recupero leggerissimo Z1.
+
+"""
+    else:
+        rules_block = ""
+
+    prompt = f"""{rules_block}Crea un piano di allenamento personalizzato.
 
 Profilo utente:
 {profile_block}
@@ -435,9 +448,6 @@ Profilo utente:
 Richiesta: "{request}"
 
 Genera MASSIMO 2 settimane di sessioni, non di più.
-Il piano deve terminare il giorno prima dell'evento (target_date - 1 giorno). NON generare sessioni dopo la target_date.
-Il giorno della target_date è il giorno della GARA, non un allenamento.
-Gli ultimi 2 giorni prima della gara devono essere riposo o recupero leggerissimo.
 
 Rispondi con JSON esatto:
 {{

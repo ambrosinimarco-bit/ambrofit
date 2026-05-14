@@ -59,7 +59,7 @@ def create_plan(user_id: str, body: CreatePlanRequest):
 
     request_str = ". ".join(parts) + "."
 
-    result = create_plan_from_claude(user_id, request_str, objective_id=body.objective_id)
+    result = create_plan_from_claude(user_id, request_str, objective_id=body.objective_id, target_date=effective_target_date)
     return result
 
 
