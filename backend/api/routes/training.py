@@ -63,6 +63,18 @@ def create_plan(user_id: str, body: CreatePlanRequest):
     return result
 
 
+@router.delete("/plan/{user_id}")
+def delete_plan(user_id: str):
+    db = get_supabase()
+    plans = db.table("training_plans").select("id").eq("user_id", user_id).execute()
+    plan_ids = [p["id"] for p in (plans.data or [])]
+    if plan_ids:
+        for pid in plan_ids:
+            db.table("training_sessions").delete().eq("plan_id", pid).execute()
+        db.table("training_plans").delete().eq("user_id", user_id).execute()
+    return {"ok": True}
+
+
 @router.get("/plan/{user_id}")
 def get_plan(user_id: str):
     plan = get_active_plan(user_id)
@@ -81,6 +93,13 @@ def adjust_plan_endpoint(user_id: str, adjustment: PlanAdjustmentRequest):
         adjustment.skip_days or 0,
         adjustment.reduce_intensity or False,
     )
+
+
+@router.delete("/session/{session_id}")
+def delete_session(session_id: str):
+    db = get_supabase()
+    db.table("training_sessions").delete().eq("id", session_id).execute()
+    return {"ok": True}
 
 
 @router.patch("/session/{session_id}")

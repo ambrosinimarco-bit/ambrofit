@@ -556,10 +556,15 @@ function renderPlanHeader(plan) {
   }
   el.innerHTML = `
     <div class="plan-header">
-      <div class="plan-name">${esc(plan.name)}</div>
-      <div class="plan-goal">${esc(plan.goal)}</div>
-      <div style="font-size:.75rem;color:var(--text2);margin-top:.5rem">
-        Dal ${plan.start_date} al ${plan.end_date} · ${plan.weekly_sessions} sessioni/settimana
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div class="plan-name">${esc(plan.name)}</div>
+          <div class="plan-goal">${esc(plan.goal)}</div>
+          <div style="font-size:.75rem;color:var(--text2);margin-top:.5rem">
+            Dal ${plan.start_date} al ${plan.end_date} · ${plan.weekly_sessions} sessioni/settimana
+          </div>
+        </div>
+        <button class="btn btn-sm btn-outline" style="color:var(--danger,#ff4757)" onclick="deletePlan()">🗑 Elimina piano</button>
       </div>
     </div>
   `;
@@ -611,6 +616,7 @@ function renderSessions(sessions) {
           <button class="btn btn-sm btn-outline" onclick="openEditSessionModal('${s.id}')">✏️</button>
           <button class="btn btn-sm btn-outline" onclick="markSession('${s.id}','completed')">✅</button>
           <button class="btn btn-sm btn-outline" onclick="markSession('${s.id}','skipped')">⏭</button>
+          <button class="btn btn-sm btn-outline" onclick="deleteSession('${s.id}')">🗑</button>
         </div>
       </div>
     `;
@@ -658,6 +664,18 @@ async function saveSessionEdit() {
   } catch(e) {
     alert('Errore: ' + e.message);
   }
+}
+
+async function deleteSession(id) {
+  if (!confirm('Eliminare questa sessione?')) return;
+  await api.deleteSession(id);
+  loadTraining();
+}
+
+async function deletePlan() {
+  if (!confirm('Eliminare il piano e tutte le sessioni? Potrai rigenerarlo dall\'obiettivo.')) return;
+  await api.deletePlan(USER_ID);
+  loadTraining();
 }
 
 async function loadSuggestedWorkout() {
