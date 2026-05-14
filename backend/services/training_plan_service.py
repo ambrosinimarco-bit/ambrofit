@@ -40,7 +40,7 @@ def create_plan_from_claude(user_id: str, request: str, objective_id: str | None
 
     start_date = date.today()
     duration_weeks = claude_plan.get("duration_weeks", 8)
-    end_date = start_date + timedelta(weeks=duration_weeks)
+    end_date = date.fromisoformat(target_date) if target_date else start_date + timedelta(weeks=duration_weeks)
 
     plan_row = {
         "user_id": user_id,
@@ -65,11 +65,16 @@ def create_plan_from_claude(user_id: str, request: str, objective_id: str | None
         "friday": 4, "saturday": 5, "sunday": 6,
     }
 
+    race_date = date.fromisoformat(target_date) if target_date else None
+
     sessions_to_insert = []
     for s in claude_plan.get("sessions", []):
         week_num = s.get("week", 1) - 1
         day_offset = day_map.get(s.get("day_of_week", "monday"), 0)
         session_date = start_date + timedelta(weeks=week_num, days=day_offset)
+
+        if race_date and session_date >= race_date:
+            continue
 
         sessions_to_insert.append({
             "plan_id": plan_id,
