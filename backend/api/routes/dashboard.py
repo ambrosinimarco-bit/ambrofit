@@ -39,7 +39,8 @@ def calorie_trend(user_id: str, days: int = 30):
     acts_raw = db.table("activities").select("activity_date,calories")\
         .eq("user_id", user_id).gte("activity_date", since).lte("activity_date", today_str).execute()
     try:
-        health_raw = db.table("daily_health").select("health_date,total_calories_iphone")\
+        health_raw = db.table("daily_health")\
+            .select("health_date,total_calories_iphone,active_calories_manual")\
             .eq("user_id", user_id).gte("health_date", since).lte("health_date", today_str).execute()
     except Exception:
         health_raw = type("R", (), {"data": []})()  # colonna non ancora migrata
@@ -63,22 +64,28 @@ def calorie_trend(user_id: str, days: int = 30):
         act_cal[d] = act_cal.get(d, 0) + (a["calories"] or 0)
 
     iphone_cal: dict[str, int] = {}
+    acm_cal: dict[str, int] = {}
     for h in (health_raw.data or []):
         if h.get("total_calories_iphone"):
             iphone_cal[h["health_date"]] = h["total_calories_iphone"]
+        if h.get("active_calories_manual"):
+            acm_cal[h["health_date"]] = h["active_calories_manual"]
 
     result = []
     for i in range(days):
         d = (date.today() - timedelta(days=days - 1 - i)).isoformat()
         cin = round(cal_in.get(d, 0), 1)
-        if d in iphone_cal:
+        if d in acm_cal:
+            cout = float(acm_cal[d])
+        elif d in iphone_cal:
             cout = float(iphone_cal[d])
         elif bmr:
             cout = round(bmr + act_cal.get(d, 0), 1)
         else:
             cout = round(act_cal.get(d, 0), 1)
+        net_calories = round(cin - cout, 1)
         result.append({"date": d, "calories_in": cin, "calories_out": cout,
-                        "net": round(cin - cout, 1), "goal": calorie_goal})
+                        "net_calories": net_calories, "goal": calorie_goal})
     return result
 
 

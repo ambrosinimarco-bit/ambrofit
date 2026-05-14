@@ -52,6 +52,19 @@ function renderCalorieChart(data) {
           borderWidth: 1.5,
           pointRadius: 0,
           fill: false,
+          yAxisID: 'y',
+        },
+        {
+          label: 'Bilancio netto',
+          data: data.map(d => d.net_calories),
+          type: 'line',
+          borderColor: 'rgba(255,199,0,.85)',
+          borderDash: [4,4],
+          borderWidth: 2,
+          pointRadius: 2,
+          pointBackgroundColor: data.map(d => (d.net_calories ?? 0) <= 0 ? '#00d4aa' : '#ff4757'),
+          fill: false,
+          yAxisID: 'y2',
         },
       ],
     },
@@ -62,6 +75,12 @@ function renderCalorieChart(data) {
       scales: {
         x: { grid: { display: false } },
         y: { grid: { color: '#2e3350' } },
+        y2: {
+          position: 'right',
+          grid: { display: false },
+          ticks: { color: 'rgba(255,199,0,.7)', font: { size: 10 } },
+          title: { display: false },
+        },
       },
     },
   });
