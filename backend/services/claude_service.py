@@ -414,10 +414,23 @@ def _parse_claude_json(response, prompt: str, system: str) -> dict:
 
 def generate_training_plan(user_profile: dict, request: str) -> dict:
     """Genera un piano di allenamento personalizzato."""
+    profile_block_parts = []
+    if user_profile.get("age"):
+        profile_block_parts.append(f"- Età: {user_profile['age']} anni")
+    if user_profile.get("weight_kg"):
+        profile_block_parts.append(f"- Peso: {user_profile['weight_kg']} kg")
+    if user_profile.get("ftp_watts"):
+        profile_block_parts.append(f"- FTP: {user_profile['ftp_watts']}W")
+    if user_profile.get("medical_notes"):
+        profile_block_parts.append(f"- Note mediche: {user_profile['medical_notes']}")
+    if user_profile.get("coaching_notes"):
+        profile_block_parts.append(f"- Note coaching: {user_profile['coaching_notes']}")
+    profile_block = "\n".join(profile_block_parts) or "- Nessun profilo disponibile"
+
     prompt = f"""Crea un piano di allenamento personalizzato.
 
 Profilo utente:
-{user_profile}
+{profile_block}
 
 Richiesta: "{request}"
 

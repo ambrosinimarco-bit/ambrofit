@@ -24,7 +24,7 @@ def get_plan_sessions(plan_id: str, from_date: date | None = None) -> list[dict]
     return result.data or []
 
 
-def create_plan_from_claude(user_id: str, request: str) -> dict:
+def create_plan_from_claude(user_id: str, request: str, objective_id: str | None = None) -> dict:
     db = get_supabase()
     user = db.table("user_profiles").select("*").eq("id", user_id).single().execute()
     user_profile = user.data or {}
@@ -37,7 +37,7 @@ def create_plan_from_claude(user_id: str, request: str) -> dict:
 
     db.table("training_plans").update({"is_active": False}).eq("user_id", user_id).execute()
 
-    plan_result = db.table("training_plans").insert({
+    plan_row = {
         "user_id": user_id,
         "name": claude_plan.get("plan_name", "Piano di allenamento"),
         "goal": claude_plan.get("goal", ""),
@@ -46,7 +46,11 @@ def create_plan_from_claude(user_id: str, request: str) -> dict:
         "end_date": end_date.isoformat(),
         "weekly_sessions": claude_plan.get("weekly_sessions", 4),
         "is_active": True,
-    }).execute()
+    }
+    if objective_id:
+        plan_row["objective_id"] = objective_id
+
+    plan_result = db.table("training_plans").insert(plan_row).execute()
 
     plan = plan_result.data[0]
     plan_id = plan["id"]

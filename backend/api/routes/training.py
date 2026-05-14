@@ -14,12 +14,54 @@ from backend.services.training_plan_service import (
     get_active_plan,
     get_plan_sessions,
     adjust_plan,
+    create_plan_from_claude,
 )
 
 router = APIRouter(prefix="/api/training", tags=["training"])
 
 
-# ── Existing plan CRUD ────────────────────────────────────────────────────────
+# ── Plan creation / CRUD ─────────────────────────────────────────────────────
+
+class CreatePlanRequest(BaseModel):
+    objective_id: str | None = None
+    weekly_sessions: int = 4
+    disciplines: list[str] = ["ride"]
+    notes: str | None = None
+    target_date: str | None = None
+
+
+@router.post("/plan/{user_id}")
+def create_plan(user_id: str, body: CreatePlanRequest):
+    db = get_supabase()
+
+    objective_title: str | None = None
+    effective_target_date = body.target_date
+
+    if body.objective_id:
+        obj_res = db.table("objectives").select("title,target_date")\
+            .eq("id", body.objective_id).limit(1).execute()
+        if obj_res.data:
+            obj = obj_res.data[0]
+            objective_title = obj.get("title")
+            if not effective_target_date:
+                effective_target_date = obj.get("target_date")
+
+    parts = [
+        f"Sessioni settimanali: {body.weekly_sessions}",
+        f"Discipline: {', '.join(body.disciplines)}",
+    ]
+    if objective_title:
+        parts.append(f"Obiettivo principale: {objective_title}")
+    if effective_target_date:
+        parts.append(f"Data evento target: {effective_target_date}")
+    if body.notes:
+        parts.append(f"Preferenze utente: {body.notes}")
+
+    request_str = ". ".join(parts) + "."
+
+    result = create_plan_from_claude(user_id, request_str, objective_id=body.objective_id)
+    return result
+
 
 @router.get("/plan/{user_id}")
 def get_plan(user_id: str):
