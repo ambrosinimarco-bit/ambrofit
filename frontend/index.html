@@ -871,37 +871,41 @@
   <!-- Edit Session Modal -->
   <div class="modal" id="modalEditSession">
     <div class="modal-header">
-      <h3>✏️ Modifica sessione</h3>
-      <button class="modal-close" onclick="closeModal()">×</button>
+      <h3>Modifica sessione</h3>
+      <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
+      <div class="form-group">
+        <label>Titolo</label>
+        <input type="text" id="editSessionTitle" />
+      </div>
       <div class="form-row">
         <div class="form-group">
           <label>Data</label>
           <input type="date" id="editSessionDate" />
         </div>
         <div class="form-group">
-          <label>Titolo</label>
-          <input type="text" id="editSessionTitle" />
+          <label>Durata (min)</label>
+          <input type="number" id="editSessionDuration" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Intensità</label>
+          <select id="editSessionIntensity">
+            <option value="easy">Easy</option>
+            <option value="moderate">Moderate</option>
+            <option value="hard">Hard</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Distanza target (km)</label>
+          <input type="number" id="editSessionDistance" step="0.1" />
         </div>
       </div>
       <div class="form-group">
         <label>Descrizione</label>
-        <textarea id="editSessionDesc" rows="3"></textarea>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Durata (min)</label>
-          <input type="number" id="editSessionDuration" min="0" />
-        </div>
-        <div class="form-group">
-          <label>Intensità</label>
-          <select id="editSessionIntensity">
-            <option value="easy">Facile</option>
-            <option value="moderate">Moderata</option>
-            <option value="hard">Intensa</option>
-          </select>
-        </div>
+        <textarea id="editSessionDescription" rows="3"></textarea>
       </div>
       <div class="form-group">
         <label>Note</label>

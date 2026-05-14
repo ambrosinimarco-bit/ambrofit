@@ -622,40 +622,41 @@ async function markSession(id, status) {
   loadTraining();
 }
 
-let _editingSessionId = null;
+let editingSessionId = null;
 
 function openEditSessionModal(sessionId) {
-  _editingSessionId = sessionId;
-  const { plan, sessions } = _lastTrainingData || {};
-  const s = (sessions || []).find(x => x.id === sessionId);
-  if (s) {
-    setVal('editSessionDate', s.scheduled_date);
+  editingSessionId = sessionId;
+  api.getSessions(USER_ID, 30).then(sessions => {
+    const s = sessions.find(x => x.id === sessionId);
+    if (!s) return;
     setVal('editSessionTitle', s.title);
-    setVal('editSessionDesc', s.description);
+    setVal('editSessionDate', s.scheduled_date);
     setVal('editSessionDuration', s.duration_target_min);
     setVal('editSessionIntensity', s.intensity);
+    setVal('editSessionDistance', s.distance_target_km || '');
+    setVal('editSessionDescription', s.description || '');
     setVal('editSessionNotes', s.notes || '');
-  }
-  openModal('modalEditSession');
+    openModal('modalEditSession');
+  });
 }
 
 async function saveSessionEdit() {
-  if (!_editingSessionId) return;
+  if (!editingSessionId) return;
   const data = {
-    scheduled_date:      getVal('editSessionDate') || undefined,
-    title:               getVal('editSessionTitle') || undefined,
-    description:         getVal('editSessionDesc') || undefined,
-    duration_target_min: parseInt(getVal('editSessionDuration'), 10) || undefined,
-    intensity:           getVal('editSessionIntensity') || undefined,
-    notes:               getVal('editSessionNotes') || undefined,
+    title:               getVal('editSessionTitle'),
+    scheduled_date:      getVal('editSessionDate'),
+    duration_target_min: parseInt(getVal('editSessionDuration')) || 0,
+    intensity:           getVal('editSessionIntensity'),
+    distance_target_km:  parseFloatOrNull('editSessionDistance'),
+    description:         getVal('editSessionDescription'),
+    notes:               getVal('editSessionNotes'),
   };
-  Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
   try {
-    await api.updateSession(_editingSessionId, data);
+    await api.updateSession(editingSessionId, data);
     closeModal();
     loadTraining();
-  } catch (e) {
-    alert('Errore nel salvataggio: ' + e.message);
+  } catch(e) {
+    alert('Errore: ' + e.message);
   }
 }
 
