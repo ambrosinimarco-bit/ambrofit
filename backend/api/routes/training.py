@@ -59,6 +59,8 @@ def create_plan(user_id: str, body: CreatePlanRequest):
 
     request_str = ". ".join(parts) + "."
 
+    db.table("training_sessions").delete().eq("user_id", user_id).execute()
+
     result = create_plan_from_claude(user_id, request_str, objective_id=body.objective_id)
     return result
 
