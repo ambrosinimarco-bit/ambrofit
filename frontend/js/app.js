@@ -114,6 +114,50 @@ async function loadOverview() {
   if (weekData.status === 'fulfilled') renderWeeklyActivities(weekData.value.days);
 
   loadGoals();
+  loadActivitySummary();
+}
+
+let _actSummaryData = { today: null, week: null, month: null };
+let _actSummaryPeriod = 'today';
+
+async function loadActivitySummary() {
+  if (!USER_ID) return;
+  try {
+    const acts = await api.getActivities(USER_ID, 30);
+    const todayStr = new Date().toLocaleDateString('sv-SE');
+    const d7 = new Date(); d7.setDate(d7.getDate() - 6);
+    const weekStr = d7.toLocaleDateString('sv-SE');
+
+    const agg = list => ({
+      min: Math.round(list.reduce((s, a) => s + (a.duration_min || 0), 0)),
+      km:  Math.round(list.reduce((s, a) => s + (a.distance_km  || 0), 0) * 10) / 10,
+      cal: Math.round(list.reduce((s, a) => s + (a.calories     || 0), 0)),
+    });
+
+    _actSummaryData = {
+      today: agg(acts.filter(a => a.activity_date === todayStr)),
+      week:  agg(acts.filter(a => a.activity_date >= weekStr)),
+      month: agg(acts),
+    };
+    renderActSummary();
+  } catch(e) {
+    console.error('loadActivitySummary error', e);
+  }
+}
+
+function renderActSummary() {
+  const d = _actSummaryData[_actSummaryPeriod];
+  if (!d) return;
+  setText('actSumMin', d.min > 0 ? d.min : '—');
+  setText('actSumKm',  d.km  > 0 ? d.km  : '—');
+  setText('actSumCal', d.cal > 0 ? d.cal : '—');
+}
+
+function switchActSummary(period, btn) {
+  _actSummaryPeriod = period;
+  document.querySelectorAll('.act-summary-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderActSummary();
 }
 
 function _updateBruciateUI(acm, calIn) {
@@ -245,6 +289,19 @@ function renderMacros(today) {
 
     const barEl = document.getElementById('macro' + m.key + 'Bar');
     if (barEl) { barEl.style.width = Math.min(100, rawPct) + '%'; barEl.dataset.state = state; }
+
+    const remainEl = document.getElementById('macro' + m.key + 'Remain');
+    if (remainEl) {
+      if (goal && rawPct >= 100) {
+        remainEl.textContent = '✓ obiettivo raggiunto';
+        remainEl.dataset.state = 'reached';
+      } else if (goal) {
+        remainEl.textContent = Math.max(0, goal - val) + 'g al target';
+        remainEl.dataset.state = state;
+      } else {
+        remainEl.textContent = '';
+      }
+    }
 
     return { ...m, val, goal, pct: rawPct, state };
   });

@@ -120,6 +120,36 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .macro-pct[data-state="good"] { color: #00d4aa; }
 .macro-pct[data-state="over"] { color: #ef4444; }
 
+.macro-remain { font-size: .72rem; margin-top: .2rem; font-weight: 600; }
+.macro-remain[data-state="low"]     { color: var(--text2); }
+.macro-remain[data-state="mid"]     { color: #facc15; }
+.macro-remain[data-state="good"]    { color: #00d4aa; }
+.macro-remain[data-state="over"]    { color: #ef4444; }
+.macro-remain[data-state="reached"] { color: #4ade80; }
+
+.act-summary-box {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: .75rem 1rem;
+  margin-bottom: .75rem;
+}
+.act-summary-tabs { display: flex; gap: .4rem; margin-bottom: .65rem; }
+.act-summary-tab {
+  background: none; border: 1px solid var(--border); border-radius: 99px;
+  color: var(--text2); font-size: .78rem; padding: .2rem .75rem;
+  cursor: pointer; transition: background .2s, color .2s;
+}
+.act-summary-tab.active, .act-summary-tab:hover {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+}
+.act-summary-values { display: flex; gap: 0; }
+.act-summary-kpi {
+  flex: 1; text-align: center;
+  border-right: 1px solid var(--border);
+}
+.act-summary-kpi:last-child { border-right: none; }
+.act-summary-val { font-size: 1.4rem; font-weight: 700; color: var(--text1); }
+.act-summary-lbl { font-size: .72rem; color: var(--text2); margin-top: .1rem; }
+
 .macro-tips {
   background: var(--bg2); border: 1px solid var(--border);
   border-radius: var(--radius); padding: .85rem 1.1rem;
