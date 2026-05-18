@@ -40,7 +40,7 @@ Rispondi con JSON esatto:
 
     response = client.messages.create(
         model="claude-opus-4-7",
-        max_tokens=1024,
+        max_tokens=8192,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -55,7 +55,7 @@ def analyze_food_photo(image_bytes: bytes, extra_context: str = "") -> dict:
 
     response = client.messages.create(
         model="claude-opus-4-7",
-        max_tokens=1024,
+        max_tokens=8192,
         system=SYSTEM_PROMPT,
         messages=[{
             "role": "user",
@@ -97,7 +97,7 @@ def analyze_nutrition_label(image_bytes: bytes, quantity_g: float = 100) -> dict
 
     response = client.messages.create(
         model="claude-opus-4-7",
-        max_tokens=1024,
+        max_tokens=8192,
         system=SYSTEM_PROMPT,
         messages=[{
             "role": "user",
@@ -192,7 +192,7 @@ def analyze_garmin_screenshots_batch(images: list[bytes]) -> dict:
 
     response = client.messages.create(
         model="claude-opus-4-7",
-        max_tokens=1024,
+        max_tokens=8192,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": content}],
     )
@@ -396,7 +396,7 @@ def _parse_claude_json(response, prompt: str, system: str) -> dict:
         # Secondo tentativo: chiediamo a Claude di completare il JSON troncato
         cont = client.messages.create(
             model="claude-opus-4-7",
-            max_tokens=4000,
+            max_tokens=8192,
             system=system,
             messages=[
                 {"role": "user", "content": prompt},
@@ -473,7 +473,7 @@ Rispondi con JSON esatto:
 
     response = client.messages.create(
         model="claude-opus-4-7",
-        max_tokens=4000,
+        max_tokens=8192,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -501,7 +501,7 @@ Analizza la situazione e rispondi con JSON:
 
     response = client.messages.create(
         model="claude-opus-4-7",
-        max_tokens=2000,
+        max_tokens=8192,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -565,7 +565,7 @@ Power come frazione FTP: Z2=0.60-0.75, SweetSpot=0.85-0.95, Threshold=0.95-1.05,
     import json
     response = client.messages.create(
         model="claude-opus-4-7",
-        max_tokens=1024,
+        max_tokens=8192,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
