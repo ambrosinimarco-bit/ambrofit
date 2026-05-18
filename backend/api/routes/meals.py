@@ -62,17 +62,20 @@ def update_meal(meal_id: str, meal: MealCreate):
     if not result.data:
         raise HTTPException(status_code=404, detail="Pasto non trovato")
     qty = meal.quantity_g or 0
-    if qty > 0:
-        from backend.services.food_service import upsert_food_item
-        f = 100 / qty
-        upsert_food_item(
-            db=db, user_id=meal.user_id, name=meal.name,
-            calories_per_100g=round((meal.calories  or 0) * f, 1),
-            protein_per_100g =round((meal.protein_g or 0) * f, 1),
-            carbs_per_100g   =round((meal.carbs_g   or 0) * f, 1),
-            fat_per_100g     =round((meal.fat_g     or 0) * f, 1),
-            fiber_per_100g   =round((meal.fiber_g   or 0) * f, 1),
-        )
+    if meal.name and qty > 0:
+        try:
+            from backend.services.food_service import upsert_food_item
+            f = 100 / qty
+            upsert_food_item(
+                db=db, user_id=meal.user_id, name=meal.name,
+                calories_per_100g=round((meal.calories  or 0) * f, 1),
+                protein_per_100g =round((meal.protein_g or 0) * f, 1),
+                carbs_per_100g   =round((meal.carbs_g   or 0) * f, 1),
+                fat_per_100g     =round((meal.fat_g     or 0) * f, 1),
+                fiber_per_100g   =round((meal.fiber_g   or 0) * f, 1),
+            )
+        except Exception as e:
+            print(f"[update_meal] upsert_food_item failed (non-blocking): {e}", flush=True)
     return result.data[0]
 
 
