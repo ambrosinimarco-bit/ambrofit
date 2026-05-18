@@ -125,8 +125,13 @@ async function loadActivitySummary() {
   try {
     const acts = await api.getActivities(USER_ID, 30);
     const todayStr = new Date().toLocaleDateString('sv-SE');
-    const d7 = new Date(); d7.setDate(d7.getDate() - 6);
-    const weekStr = d7.toLocaleDateString('sv-SE');
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const diffToMonday = (dayOfWeek === 0) ? 6 : dayOfWeek - 1;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - diffToMonday);
+    monday.setHours(0, 0, 0, 0);
+    const weekStr = monday.toISOString().split('T')[0];
 
     const agg = list => ({
       min: Math.round(list.reduce((s, a) => s + (a.duration_min || 0), 0)),
