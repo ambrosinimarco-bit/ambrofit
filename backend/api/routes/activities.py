@@ -23,7 +23,10 @@ def list_activities(user_id: str, activity_date: date | None = None, days: int =
 @router.post("/", response_model=ActivityOut)
 def create_activity(activity: ActivityCreate):
     db = get_supabase()
-    result = db.table("activities").insert(activity.model_dump()).execute()
+    data = activity.model_dump()
+    if data.get("activity_date"):
+        data["activity_date"] = str(data["activity_date"])
+    result = db.table("activities").insert(data).execute()
     if not result.data:
         raise HTTPException(status_code=500, detail="Errore nel salvataggio")
     return result.data[0]
@@ -32,7 +35,10 @@ def create_activity(activity: ActivityCreate):
 @router.put("/{activity_id}")
 def update_activity(activity_id: str, activity: ActivityCreate):
     db = get_supabase()
-    result = db.table("activities").update(activity.model_dump()).eq("id", activity_id).execute()
+    data = activity.model_dump()
+    if data.get("activity_date"):
+        data["activity_date"] = str(data["activity_date"])
+    result = db.table("activities").update(data).eq("id", activity_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Attività non trovata")
     return result.data[0]
