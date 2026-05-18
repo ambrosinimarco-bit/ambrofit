@@ -30,6 +30,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await _cb_use_food(query, context, db, user_id, cb_data[len("use_food_"):])
     elif cb_data == "new_food":
         await _cb_new_food(query, context, db, user_id)
+    elif cb_data == "insert_nosave":
+        await _cb_insert_nosave(query, context, db, user_id)
+    elif cb_data == "cancel_food":
+        await _cb_cancel_food(query, context)
     elif cb_data.startswith("save_food_"):
         await _cb_save_food(query, context, db, user_id, cb_data[len("save_food_"):])
     elif cb_data == "skip_food":
@@ -178,6 +182,43 @@ async def _cb_save_food(query, context, db, user_id: str, meal_id: str) -> None:
         f"⭐ *{name}* salvato negli Alimenti Preferiti!",
         parse_mode="Markdown",
     )
+
+
+async def _cb_insert_nosave(query, context, db, user_id: str) -> None:
+    state = _get_meal_interaction(context)
+    if not state:
+        await query.edit_message_text("⏱ Sessione scaduta. Reinserisci il pasto.")
+        return
+    claude_totals = state.get("claude_totals", {})
+    meal_name = state.get("meal_name", "Pasto")
+    item_qty  = float(state.get("item_qty") or 100.0)
+    meal_time = state.get("meal_time", "snack")
+    source    = state.get("source", "telegram_text")
+    db.table("meals").insert({
+        "user_id":    user_id,
+        "meal_date":  date.today().isoformat(),
+        "meal_time":  meal_time,
+        "name":       meal_name,
+        "calories":   claude_totals.get("calories", 0),
+        "protein_g":  claude_totals.get("protein_g", 0),
+        "carbs_g":    claude_totals.get("carbs_g", 0),
+        "fat_g":      claude_totals.get("fat_g", 0),
+        "fiber_g":    claude_totals.get("fiber_g", 0),
+        "quantity_g": item_qty if item_qty > 0 else None,
+        "source":     source,
+    }).execute()
+    context.user_data.pop("meal_interaction", None)
+    cal = round(claude_totals.get("calories", 0))
+    await query.edit_message_text(
+        f"✅ *{meal_name}* ({cal} kcal) aggiunto",
+        parse_mode="Markdown",
+    )
+
+
+async def _cb_cancel_food(query, context) -> None:
+    if context:
+        context.user_data.pop("meal_interaction", None)
+    await query.edit_message_text("Inserimento annullato ✓")
 
 
 async def _cb_skip_food(query, context) -> None:

@@ -129,36 +129,44 @@ def _word_similarity(query: str, name: str) -> float:
     return len(q_toks & n_toks) / len(q_toks)
 
 
-def lookup_food_item_fuzzy(db, user_id: str, query: str, min_similarity: float = 0.6) -> dict | None:
+def lookup_food_item_fuzzy(db, user_id: str, query: str, min_similarity: float = 0.6, multi: bool = False) -> "dict | list | None":
     """Fuzzy lookup with similarity threshold.
 
     1. Direct substring match (always returned if found).
     2. Word-coverage similarity ≥ min_similarity (default 0.6).
-    Allows "fiocchi avena" to find "Fiocchi d'Avena Coop".
+
+    If multi=True, returns a list of up to 5 matches (sorted by score).
+    If multi=False (default), returns a single dict or None.
     """
     if not query:
-        return None
+        return [] if multi else None
     try:
         q = query.strip()
         # 1. Direct substring match
         res = db.table("food_items").select("*") \
             .eq("user_id", user_id).ilike("name", f"%{q}%") \
-            .order("name").limit(1).execute()
+            .order("name").execute()
         if res.data:
+            if multi:
+                return res.data[:5]
             return res.data[0]
         # 2. Word-coverage similarity across all items
         all_items = db.table("food_items").select("*").eq("user_id", user_id).execute()
-        best_item, best_score = None, 0.0
+        scored = []
         for item in (all_items.data or []):
-            # Also try reverse: name is a substring of query
             if item["name"].lower() in q.lower():
-                return item
+                scored.append((1.0, item))
+                continue
             score = _word_similarity(q, item["name"])
-            if score > best_score:
-                best_score, best_item = score, item
-        return best_item if best_score >= min_similarity else None
+            if score >= min_similarity:
+                scored.append((score, item))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        results = [item for _, item in scored[:5]]
+        if multi:
+            return results
+        return results[0] if results else None
     except Exception:
-        return None
+        return [] if multi else None
 
 
 def calculate_for_quantity(item: dict, quantity_g: float) -> dict:

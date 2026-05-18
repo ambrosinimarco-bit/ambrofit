@@ -282,27 +282,30 @@ async def dispatch_message(
                     "fat_g":     item.get("fat_g", 0),
                     "fiber_g":   item.get("fiber_g", 0),
                 }
-                fi = lookup_food_item_fuzzy(db, user_id, item_name or meal_name) if (item_name or meal_name) else None
+                fi_list = lookup_food_item_fuzzy(db, user_id, item_name or meal_name, multi=True) if (item_name or meal_name) else []
 
-                if fi:
-                    fi_display = fi["name"] + (f" ({fi['brand']})" if fi.get("brand") else "")
+                if fi_list:
                     if context:
                         context.user_data["meal_interaction"] = {
                             "type": "use_or_new", "ts": datetime.now().timestamp(),
-                            "food_found": fi, "meal_name": meal_name,
+                            "food_found": fi_list[0], "meal_name": meal_name,
                             "item_name": item_name, "item_brand": item_brand,
                             "item_qty": item_qty, "meal_time": meal_time,
                             "source": source, "text": text, "claude_totals": claude_totals,
                         }
-                    keyboard = InlineKeyboardMarkup([[
-                        InlineKeyboardButton("✅ Usa questo", callback_data=f"use_food_{fi['id']}"),
-                        InlineKeyboardButton("➕ Crea nuovo",  callback_data="new_food"),
-                    ]])
-                    await update.message.reply_text(
-                        f"Ho trovato *{fi_display}* negli Alimenti Preferiti.\n"
-                        f"Usare quello o creare nuovo?",
-                        parse_mode="Markdown", reply_markup=keyboard,
-                    )
+                    rows = [[InlineKeyboardButton(
+                        f"✅ {fi['name']}" + (f" ({fi['brand']})" if fi.get("brand") else ""),
+                        callback_data=f"use_food_{fi['id']}"
+                    )] for fi in fi_list]
+                    rows.append([InlineKeyboardButton("➕ Nuovo alimento (salva nei preferiti)", callback_data="new_food")])
+                    rows.append([InlineKeyboardButton("⚡ Inserisci senza salvare", callback_data="insert_nosave")])
+                    rows.append([InlineKeyboardButton("❌ Annulla", callback_data="cancel_food")])
+                    keyboard = InlineKeyboardMarkup(rows)
+                    if len(fi_list) == 1:
+                        msg = f"Ho trovato *{fi_list[0]['name']}* negli Alimenti Preferiti.\nUsa questo o scegli un'altra opzione?"
+                    else:
+                        msg = f"Ho trovato *{len(fi_list)} alimenti* negli Alimenti Preferiti. Quale vuoi usare?"
+                    await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=keyboard)
                 else:
                     meal_res = db.table("meals").insert({
                         "user_id":   user_id, "meal_date": date.today().isoformat(),
