@@ -397,7 +397,7 @@ async function loadActivities() {
     acts.length ? acts.map(a => activityItemHtml(a)).join('') : '<p style="color:var(--text2)">Nessuna attività registrata</p>';
 }
 
-const ACTIVITY_ICONS = { run:'🏃', ride:'🚴', swim:'🏊', walk:'🚶', hike:'🥾', strength:'🏋️', yoga:'🧘', other:'⚡' };
+const ACTIVITY_ICONS = { run:'🏃', ride:'🚴', swim:'🏊', walk:'🚶', hike:'🥾', strength:'💪', yoga:'🧘', other:'⚡' };
 
 function activityItemHtml(a) {
   const icon = ACTIVITY_ICONS[a.activity_type] || '⚡';
@@ -1260,9 +1260,12 @@ function openEditActivityModal(activityId) {
 
   setVal('activityType', a.activity_type || 'other');
   setVal('activityName', a.name);
+  setVal('activityDate', a.activity_date || '');
   setVal('activityDuration', a.duration_min);
   setVal('activityDistance', a.distance_km || '');
   setVal('activityElevation', a.elevation_m || '');
+  setVal('activityIntensity', a.intensity || 'medium');
+  setVal('activityCalories', a.calories || '');
   setVal('activityNotes', a.notes || '');
 
   const header = document.querySelector('#modalActivity .modal-header h3');
@@ -1273,6 +1276,9 @@ function openEditActivityModal(activityId) {
 
 function openAddActivityModal() {
   editingActivityId = null;
+  setVal('activityDate', new Date().toISOString().split('T')[0]);
+  setVal('activityIntensity', 'medium');
+  setVal('activityCalories', '');
   ['activityName','activityDuration','activityDistance','activityElevation','activityNotes']
     .forEach(id => setVal(id, ''));
   const header = document.querySelector('#modalActivity .modal-header h3');
@@ -1346,21 +1352,27 @@ async function saveMeal() {
   }
 }
 
+const ACTIVITY_TYPE_LABELS = { ride:'Ciclismo', strength:'Forza', walk:'Camminata', run:'Corsa', other:'Attività' };
+
 async function saveActivity() {
   const existing = editingActivityId ? activitiesCache[editingActivityId] : null;
+  const type = getVal('activityType') || 'other';
+  const rawName = getVal('activityName').trim();
+  const name = rawName || ACTIVITY_TYPE_LABELS[type] || 'Attività';
   const data = {
     user_id: USER_ID,
-    activity_date: existing?.activity_date || new Date().toISOString().split('T')[0],
-    activity_type: getVal('activityType'),
-    name: getVal('activityName'),
+    activity_date: getVal('activityDate') || new Date().toISOString().split('T')[0],
+    activity_type: type,
+    name,
     duration_min: parseFloat(getVal('activityDuration')) || 0,
     distance_km: parseFloatOrNull('activityDistance'),
     elevation_m: parseFloatOrNull('activityElevation'),
+    intensity: getVal('activityIntensity') || null,
+    calories: parseFloatOrNull('activityCalories'),
     notes: getVal('activityNotes'),
     strava_id: existing?.strava_id || null,
     source: existing?.source || 'manual',
   };
-  if (!data.name) { alert('Inserisci il nome dell\'attività'); return; }
   try {
     if (editingActivityId) {
       await api.updateActivity(editingActivityId, data);

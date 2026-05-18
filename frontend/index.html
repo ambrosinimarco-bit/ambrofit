@@ -603,29 +603,46 @@
 
   <!-- Add Activity Modal -->
   <div class="modal" id="modalActivity">
-    <div class="modal-header"><h3>Registra attività</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-header"><h3 id="activityModalTitle">Registra attività</h3><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
       <div class="form-row">
         <div class="form-group"><label>Tipo</label>
           <select id="activityType">
-            <option value="run">Corsa</option>
-            <option value="ride">Ciclismo</option>
-            <option value="swim">Nuoto</option>
-            <option value="walk">Camminata</option>
-            <option value="hike">Escursione</option>
-            <option value="strength">Forza</option>
-            <option value="yoga">Yoga</option>
-            <option value="other">Altro</option>
+            <option value="ride">🚴 Ciclismo</option>
+            <option value="strength">💪 Corpo libero</option>
+            <option value="walk">🚶 Camminata</option>
+            <option value="run">🏃 Corsa</option>
+            <option value="other">⚡ Altro</option>
           </select>
         </div>
-        <div class="form-group"><label>Nome</label><input type="text" id="activityName" placeholder="es. Uscita in bici" /></div>
+        <div class="form-group"><label>Data</label>
+          <input type="date" id="activityDate" />
+        </div>
+      </div>
+      <div class="form-group"><label>Nome (opzionale — generato dal tipo se vuoto)</label>
+        <input type="text" id="activityName" placeholder="es. Uscita in bici" />
       </div>
       <div class="form-row">
         <div class="form-group"><label>Durata (min)</label><input type="number" id="activityDuration" placeholder="60" /></div>
-        <div class="form-group"><label>Distanza (km)</label><input type="number" id="activityDistance" step="0.1" placeholder="20" /></div>
-        <div class="form-group"><label>Dislivello (m)</label><input type="number" id="activityElevation" placeholder="300" /></div>
+        <div class="form-group"><label>Intensità</label>
+          <select id="activityIntensity">
+            <option value="low">Bassa</option>
+            <option value="medium" selected>Media</option>
+            <option value="high">Alta</option>
+          </select>
+        </div>
       </div>
-      <div class="form-group"><label>Note</label><input type="text" id="activityNotes" placeholder="opzionale" /></div>
+      <div class="form-row">
+        <div class="form-group"><label>Calorie (Apple Watch)</label>
+          <input type="number" id="activityCalories" placeholder="opzionale" />
+        </div>
+        <div class="form-group"><label>Distanza (km)</label>
+          <input type="number" id="activityDistance" step="0.1" placeholder="opzionale" />
+        </div>
+      </div>
+      <div class="form-group"><label>Note</label>
+        <textarea id="activityNotes" rows="2" placeholder="opzionale"></textarea>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Annulla</button>

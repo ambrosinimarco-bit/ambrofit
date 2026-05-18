@@ -72,6 +72,7 @@ class ActivityCreate(BaseModel):
     normalized_power_w: Optional[int] = None
     avg_cadence_rpm: Optional[float] = None
     tss: Optional[float] = None
+    intensity: Optional[str] = None
 
 
 class ActivityOut(ActivityCreate):
