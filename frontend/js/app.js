@@ -122,7 +122,6 @@ async function loadActivitySummary() {
   if (!USER_ID) return;
   try {
     const acts = await api.getActivities(USER_ID, 31);
-    console.log('DEBUG activities:', acts.slice(0,3).map(a => ({date: a.activity_date, dur: a.duration_min, dist: a.distance_km})));
     const todayStr = new Date().toLocaleDateString('sv-SE');
     const now = new Date();
     const dayOfWeek = now.getDay();
@@ -133,8 +132,6 @@ async function loadActivitySummary() {
     const weekStr = monday.toISOString().split('T')[0];
     const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthStr = firstOfMonth.toISOString().split('T')[0];
-    console.log('DEBUG todayStr:', todayStr, 'weekStr:', weekStr, 'monthStr:', monthStr);
-
     const agg = list => ({
       min: Math.round(list.reduce((s, a) => s + (a.duration_min || 0), 0)),
       km:  Math.round(list.reduce((s, a) => s + (a.distance_km  || 0), 0) * 10) / 10,
@@ -342,13 +339,6 @@ function renderMacroTips(macros) {
 
   box.style.display = '';
   box.innerHTML = show.map(t => `<p>${t.text}</p>`).join('');
-}
-
-function renderWeeklyActivities(days) {
-  const container = document.getElementById('weeklyActivities');
-  const acts = days.flatMap(d => d.activities || []);
-  if (!acts.length) { container.innerHTML = '<p style="color:var(--text2)">Nessuna attività questa settimana</p>'; return; }
-  container.innerHTML = acts.map(a => activityItemHtml(a)).join('');
 }
 
 // ─── Nutrition ────────────────────────────────────────────────────
