@@ -231,30 +231,22 @@
           <button class="btn btn-sm btn-outline" id="btnNutritionToday" onclick="goToToday()" style="display:none">Oggi</button>
         </div>
 
-        <div class="meal-groups" id="mealGroups"></div>
-
-        <button class="btn btn-primary btn-block" onclick="openAddMealModal()">+ Aggiungi pasto</button>
-
-        <!-- Alimenti Preferiti -->
-        <div class="card" style="margin-top:1rem">
-          <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;padding:.1rem 0" onclick="toggleFoodDB()">
-            <h3 style="margin:0;font-size:1rem">⭐ Alimenti Preferiti</h3>
-            <span id="foodDBToggleIcon" style="color:var(--text2);font-size:.85rem">▼</span>
+        <!-- Nutrition action bar -->
+        <div class="nutrition-action-bar">
+          <div class="food-search-wrap">
+            <input type="text" id="nutritionSearchInput" class="food-search-input"
+                   placeholder="Cerca alimento preferito..." autocomplete="off"
+                   oninput="showNutritionSuggestions(this.value)">
+            <div id="nutritionSearchResults" class="food-search-results" style="display:none"></div>
           </div>
-          <div id="foodDBSection" style="display:none;margin-top:.75rem">
-            <div style="display:flex;gap:.5rem;margin-bottom:.6rem">
-              <button id="foodPhotoBtn" class="btn btn-sm btn-outline" onclick="triggerFoodPhotoUpload()" style="flex:1">📷 Da foto etichetta</button>
-              <button class="btn btn-sm btn-outline" onclick="openFoodManualAddModal()" style="flex:1">✏️ Aggiungi manualmente</button>
-            </div>
-            <input type="file" id="foodPhotoInput" accept="image/*" style="display:none" onchange="handleFoodPhotoFile(event)">
-            <input type="text" id="foodSearchInput" placeholder="🔍 Cerca alimento..."
-                   class="form-input" oninput="searchFoodItems()"
-                   style="width:100%;box-sizing:border-box;margin-bottom:.75rem">
-            <div id="foodItemsList"><p style="color:var(--text2);font-size:.85rem">Caricamento...</p></div>
-          </div>
+          <button class="btn btn-sm btn-outline" onclick="openAddMealModal()">+ Aggiungi manuale</button>
+          <button class="btn-link" onclick="openCoachWithMessage('Analizza la mia nutrizione di oggi: sono nei target di calorie, proteine, carboidrati e grassi? Cosa miglioreresti?')">💬 Coach</button>
         </div>
 
-        <button class="btn-coach" onclick="openCoachWithMessage('Analizza la mia nutrizione di oggi: sono nei target di calorie, proteine, carboidrati e grassi? Cosa miglioreresti?')">💬 Chiedi al coach</button>
+        <div class="meal-groups" id="mealGroups"></div>
+
+        <input type="file" id="foodPhotoInput" accept="image/*" style="display:none" onchange="handleFoodPhotoFile(event)">
+        <div id="foodItemsList" style="display:none"></div>
       </section>
 
       <!-- ── TAB: Attività ── -->

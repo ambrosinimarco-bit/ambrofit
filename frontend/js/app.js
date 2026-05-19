@@ -348,10 +348,43 @@ async function loadNutrition() {
     api.getMeals(USER_ID, nutritionDate).catch(() => []),
     api.getFoods(USER_ID).catch(() => []),
   ]);
+  foodDBCache = foods;
   const foodByName = {};
   foods.forEach(f => { if (f.name) foodByName[f.name.toLowerCase()] = f; });
   renderMealGroups(meals, foodByName);
 }
+
+function showNutritionSuggestions(query) {
+  const resultsEl = document.getElementById('nutritionSearchResults');
+  if (!resultsEl) return;
+  if (!query.trim()) { resultsEl.style.display = 'none'; return; }
+  const q = query.toLowerCase();
+  const matches = foodDBCache.filter(f => f.name && f.name.toLowerCase().includes(q)).slice(0, 8);
+  if (!matches.length) { resultsEl.style.display = 'none'; return; }
+  resultsEl.innerHTML = matches.map(f => `
+    <div class="food-search-item" onclick="selectNutritionFood('${f.id}')">
+      <div class="food-search-item-name">${esc(f.name)}${f.brand ? ` <span class="food-search-item-brand">(${esc(f.brand)})</span>` : ''}</div>
+      <div class="food-search-item-meta">${Math.round(f.calories_per_100g || 0)} kcal · P ${f.protein_per_100g || 0}g · C ${f.carbs_per_100g || 0}g · G ${f.fat_per_100g || 0}g /100g</div>
+    </div>
+  `).join('');
+  resultsEl.style.display = 'block';
+}
+
+function selectNutritionFood(foodId) {
+  const resultsEl = document.getElementById('nutritionSearchResults');
+  if (resultsEl) resultsEl.style.display = 'none';
+  const input = document.getElementById('nutritionSearchInput');
+  if (input) input.value = '';
+  openFoodAddModal(foodId);
+}
+
+document.addEventListener('click', e => {
+  const wrap = document.querySelector('.food-search-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    const resultsEl = document.getElementById('nutritionSearchResults');
+    if (resultsEl) resultsEl.style.display = 'none';
+  }
+});
 
 function renderMealGroups(meals, foodByName = {}) {
   const groups = { breakfast: [], lunch: [], dinner: [], snack: [] };
