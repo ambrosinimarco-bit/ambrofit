@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from backend.config import get_settings
 from backend.database.client import get_supabase
+from backend.services.nutrition_service import get_daily_summary
 
 settings = get_settings()
 client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
@@ -297,6 +298,7 @@ def _build_system_prompt(
     health_by_day: dict,
     today_str: str,
     db_history: list[dict] | None = None,
+    today_summary: dict | None = None,
 ) -> str:
     ftp    = profile.get("ftp_watts") or 202
     z1     = profile.get("power_zone_1_max") or 121
@@ -316,13 +318,26 @@ def _build_system_prompt(
     weight_now = profile.get("weight_kg") or \
         next((h.get("weight_kg") for h in health_records if h.get("weight_kg")), "n/d")
 
+    macro_line = ""
+    if today_summary:
+        cal_t  = today_summary.get("calorie_goal") or today_summary.get("calories_for_macros")
+        prot_t = today_summary.get("protein_goal_g")
+        carb_t = today_summary.get("carbs_goal_g")
+        fat_t  = today_summary.get("fat_goal_g")
+        dyn    = today_summary.get("macro_targets_dynamic", False)
+        if cal_t:
+            macro_line = (
+                f"\nTarget macro oggi {'(dinamici ⚡)' if dyn else '(fissi)'}:"
+                f" {round(cal_t)} kcal | P {round(prot_t or 0)}g | C {round(carb_t or 0)}g | G {round(fat_t or 0)}g"
+            )
+
     context = f"""
 ━━━ SNAPSHOT ATLETA — {today_str} ━━━
 
 PROFILO
 FTP {ftp}W | Zone: Z1 <{z1}W | Z2 {z1}–{z2}W | Z3 {z2}–{z3}W | Z4 {z3}–{z4}W | Z5 >{z4}W
 Cadenza target: {cmin}–{cmax} rpm (difficoltà su pendenze >6-7%)
-Peso attuale: {weight_now} kg
+Peso attuale: {weight_now} kg{macro_line}
 Note mediche: {medical}
 Obiettivi: {coaching}
 
@@ -389,10 +404,16 @@ def _build_coach_prompt(user_id: str, exclude_session_id: str | None = None) -> 
 
     db_history = _load_history_db(user_id, exclude_session_id=exclude_session_id)
 
+    try:
+        today_summary = get_daily_summary(user_id, date.today())
+    except Exception:
+        today_summary = None
+
     return _build_system_prompt(
         profile, activities, health_records, weight_records,
         meals_by_day, health_by_day, today_str,
         db_history=db_history,
+        today_summary=today_summary,
     )
 
 
