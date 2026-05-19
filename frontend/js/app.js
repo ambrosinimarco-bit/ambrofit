@@ -103,15 +103,13 @@ async function loadOverview() {
   }
 
   // Grafici e attività: caricamento opzionale, errori non bloccano i KPI
-  const [calTrend, weightTrend, weekData] = await Promise.allSettled([
+  const [calTrend, weightTrend] = await Promise.allSettled([
     api.calorieTrend(USER_ID, 30),
     api.weightTrend(USER_ID, 60),
-    api.week(USER_ID, 0),
   ]);
 
   if (calTrend.status === 'fulfilled') renderCalorieChart(calTrend.value);
   if (weightTrend.status === 'fulfilled') renderWeightChart(weightTrend.value);
-  if (weekData.status === 'fulfilled') renderWeeklyActivities(weekData.value.days);
 
   loadGoals();
   loadActivitySummary();
@@ -123,26 +121,27 @@ let _actSummaryPeriod = 'today';
 async function loadActivitySummary() {
   if (!USER_ID) return;
   try {
-    const acts = await api.getActivities(USER_ID, 30);
+    const acts = await api.getActivities(USER_ID, 31);
     const todayStr = new Date().toLocaleDateString('sv-SE');
-    const today = new Date();
-    const dayOfWeek = today.getDay();
+    const now = new Date();
+    const dayOfWeek = now.getDay();
     const diffToMonday = (dayOfWeek === 0) ? 6 : dayOfWeek - 1;
-    const monday = new Date(today);
-    monday.setDate(today.getDate() - diffToMonday);
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - diffToMonday);
     monday.setHours(0, 0, 0, 0);
     const weekStr = monday.toISOString().split('T')[0];
+    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthStr = firstOfMonth.toISOString().split('T')[0];
 
     const agg = list => ({
       min: Math.round(list.reduce((s, a) => s + (a.duration_min || 0), 0)),
       km:  Math.round(list.reduce((s, a) => s + (a.distance_km  || 0), 0) * 10) / 10,
-      cal: Math.round(list.reduce((s, a) => s + (a.calories     || 0), 0)),
     });
 
     _actSummaryData = {
       today: agg(acts.filter(a => a.activity_date === todayStr)),
       week:  agg(acts.filter(a => a.activity_date >= weekStr)),
-      month: agg(acts),
+      month: agg(acts.filter(a => a.activity_date >= monthStr)),
     };
     renderActSummary();
   } catch(e) {
@@ -155,7 +154,6 @@ function renderActSummary() {
   if (!d) return;
   setText('actSumMin', d.min > 0 ? d.min : '—');
   setText('actSumKm',  d.km  > 0 ? d.km  : '—');
-  setText('actSumCal', d.cal > 0 ? d.cal : '—');
 }
 
 function switchActSummary(period, btn) {
