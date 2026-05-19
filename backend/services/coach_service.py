@@ -329,9 +329,12 @@ def _build_system_prompt(
         print(f"[coach] today_summary targets: cal={cal_t} prot={prot_t} carb={carb_t} fat={fat_t} dyn={dyn}", flush=True)
         if cal_t:
             macro_line = (
-                f"\nTarget nutrizionali di oggi {'(dinamici)' if dyn else '(fissi)'}:"
-                f" {round(cal_t)} kcal, proteine {round(prot_t or 0)}g,"
-                f" carboidrati {round(carb_t or 0)}g, grassi {round(fat_t or 0)}g"
+                f"\nTARGET NUTRIZIONALI PRECISI DI OGGI (calcolati dal sistema, usa SOLO questi valori, non stimare autonomamente):\n"
+                f"- Calorie target: {round(cal_t)} kcal\n"
+                f"- Proteine target: {round(prot_t or 0)}g\n"
+                f"- Carboidrati target: {round(carb_t or 0)}g\n"
+                f"- Grassi target: {round(fat_t or 0)}g\n"
+                f"IMPORTANTE: non usare valori diversi da questi per valutare la nutrizione dell'utente."
             )
     else:
         print("[coach] today_summary non disponibile — target macro assenti dal contesto", flush=True)
