@@ -1366,6 +1366,7 @@ function openAdjustPlanModal() { openModal('modalAdjustPlan'); }
 
 async function saveMeal() {
   const name = getVal('mealName');
+  console.log('saveMeal called, name:', name, 'editingMealId:', editingMealId);
   if (!name) { alert('Inserisci il nome del pasto'); return; }
 
   const btn = document.getElementById('mealSaveBtn');
