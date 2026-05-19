@@ -274,7 +274,8 @@ Per analisi forma/affaticamento:
 - Usa numeri concreti: watt, grammi, ore, km — mai solo "aumenta un po'"
 - Grassetto per concetti chiave; elenchi solo quando la struttura lo richiede
 - No disclaimer medici generici; se c'è controindicazione specifica per Marco, citala
-- Se stai continuando una conversazione, non ripetere il contesto già detto\
+- Se stai continuando una conversazione, non ripetere il contesto già detto
+- Non fare mai riferimento al numero di volte che l'utente ha fatto una domanda. Non dire frasi come "è la terza volta che chiedi" o simili. Ogni domanda va trattata con rispetto e senza commenti sul comportamento dell'utente.\
 """
 
 
@@ -325,11 +326,15 @@ def _build_system_prompt(
         carb_t = today_summary.get("carbs_goal_g")
         fat_t  = today_summary.get("fat_goal_g")
         dyn    = today_summary.get("macro_targets_dynamic", False)
+        print(f"[coach] today_summary targets: cal={cal_t} prot={prot_t} carb={carb_t} fat={fat_t} dyn={dyn}", flush=True)
         if cal_t:
             macro_line = (
-                f"\nTarget macro oggi {'(dinamici ⚡)' if dyn else '(fissi)'}:"
-                f" {round(cal_t)} kcal | P {round(prot_t or 0)}g | C {round(carb_t or 0)}g | G {round(fat_t or 0)}g"
+                f"\nTarget nutrizionali di oggi {'(dinamici)' if dyn else '(fissi)'}:"
+                f" {round(cal_t)} kcal, proteine {round(prot_t or 0)}g,"
+                f" carboidrati {round(carb_t or 0)}g, grassi {round(fat_t or 0)}g"
             )
+    else:
+        print("[coach] today_summary non disponibile — target macro assenti dal contesto", flush=True)
 
     context = f"""
 ━━━ SNAPSHOT ATLETA — {today_str} ━━━
@@ -406,7 +411,8 @@ def _build_coach_prompt(user_id: str, exclude_session_id: str | None = None) -> 
 
     try:
         today_summary = get_daily_summary(user_id, date.today())
-    except Exception:
+    except Exception as e:
+        print(f"[coach] get_daily_summary failed: {e}", flush=True)
         today_summary = None
 
     return _build_system_prompt(
