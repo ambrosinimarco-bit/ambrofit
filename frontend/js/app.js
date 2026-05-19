@@ -1395,6 +1395,7 @@ async function saveMeal() {
       await api.addMeal(data);
     }
     editingMealId = null;
+    ['mealName','mealCalories','mealProtein','mealCarbs','mealFat','mealQuantity'].forEach(id => setVal(id, ''));
     closeModal();
     loadNutrition();
     loadOverview();
