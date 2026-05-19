@@ -2116,8 +2116,11 @@ function openCoachWithMessage(msg) {
   const coachNav = document.querySelector('[data-tab="coach"]');
   if (coachNav) coachNav.classList.add('active');
   document.getElementById('tab-coach').classList.add('active');
-  document.getElementById('coachInput').value = msg;
-  sendCoachMessage();
+  const input = document.getElementById('coachInput');
+  if (input) {
+    input.value = msg;
+    input.focus();
+  }
 }
 
 async function toggleCoachHistory() {
