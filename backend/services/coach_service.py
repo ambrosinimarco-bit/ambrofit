@@ -399,7 +399,7 @@ def _build_coach_prompt(user_id: str, exclude_session_id: str | None = None) -> 
 def _call_claude(system_prompt: str, messages: list[dict]) -> str:
     response = client.messages.create(
         model="claude-opus-4-7",
-        max_tokens=1500,
+        max_tokens=8192,
         system=system_prompt,
         messages=messages,
     )
