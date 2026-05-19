@@ -122,6 +122,7 @@ async function loadActivitySummary() {
   if (!USER_ID) return;
   try {
     const acts = await api.getActivities(USER_ID, 31);
+    console.log('DEBUG activities:', acts.slice(0,3).map(a => ({date: a.activity_date, dur: a.duration_min, dist: a.distance_km})));
     const todayStr = new Date().toLocaleDateString('sv-SE');
     const now = new Date();
     const dayOfWeek = now.getDay();
@@ -132,6 +133,7 @@ async function loadActivitySummary() {
     const weekStr = monday.toISOString().split('T')[0];
     const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthStr = firstOfMonth.toISOString().split('T')[0];
+    console.log('DEBUG todayStr:', todayStr, 'weekStr:', weekStr, 'monthStr:', monthStr);
 
     const agg = list => ({
       min: Math.round(list.reduce((s, a) => s + (a.duration_min || 0), 0)),
