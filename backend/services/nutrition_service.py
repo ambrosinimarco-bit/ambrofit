@@ -110,6 +110,7 @@ def get_daily_summary(user_id: str, target_date: date) -> dict:
         "estimated_eod_calories": estimated_eod_calories,
         "net_calories": round(calories_in - calories_out, 1),
         "calorie_goal": calorie_goal,
+        "calories_for_macros": calories_for_macros,
         "calorie_balance": round(calories_in - calorie_goal, 1),
         "protein_g": round(protein, 1),
         "carbs_g": round(carbs, 1),

@@ -321,7 +321,7 @@ def _build_system_prompt(
 
     macro_line = ""
     if today_summary:
-        cal_t  = today_summary.get("calorie_goal") or today_summary.get("calories_for_macros")
+        cal_t  = today_summary.get("calories_for_macros") or today_summary.get("calorie_goal")
         prot_t = today_summary.get("protein_goal_g")
         carb_t = today_summary.get("carbs_goal_g")
         fat_t  = today_summary.get("fat_goal_g")
