@@ -2211,6 +2211,8 @@ function openFoodAddModal(foodId) {
   document.getElementById('foodAddPreview').textContent = '';
   setVal('foodAddMealTime', 'snack');
   setVal('foodAddQuantity', '');
+  const saveBtn = document.getElementById('foodAddSaveBtn');
+  if (saveBtn) saveBtn.disabled = false;
 
   openModal('modalFoodAdd');
   setTimeout(() => document.getElementById('foodAddQuantity')?.focus(), 100);
@@ -2255,6 +2257,8 @@ async function saveFoodToPasto() {
   try {
     await api.addMeal(data);
     selectedFoodItem = null;
+    setVal('foodAddQuantity', '');
+    if (btn) btn.disabled = false;
     closeModal();
     loadNutrition();
     loadOverview();
