@@ -152,6 +152,45 @@ def _fmt_activities(activities: list) -> str:
     return "\n".join(lines)
 
 
+def _fmt_objectives(objectives: list) -> str:
+    if not objectives:
+        return "Nessun obiettivo attivo."
+    lines = []
+    today = date.today()
+    for o in objectives:
+        title   = o.get("title") or "Obiettivo"
+        otype   = o.get("type") or "open"
+        tdate   = o.get("target_date")
+        desc    = o.get("description") or ""
+        plan    = o.get("plan_name") or ""
+        done    = o.get("completed_sessions") or 0
+        total   = o.get("total_sessions") or 0
+        pct     = o.get("completion_pct") or 0
+
+        line = f"• {tdate or '—'} — {title} ({otype})"
+
+        if tdate:
+            try:
+                days_left = (date.fromisoformat(tdate) - today).days
+                if days_left > 0:
+                    line += f" — tra {days_left} giorni"
+                elif days_left == 0:
+                    line += " — OGGI"
+                else:
+                    line += f" — scaduto {abs(days_left)}gg fa"
+            except ValueError:
+                pass
+
+        if desc:
+            line += f"\n  {desc}"
+        if plan:
+            line += f"\n  Piano: {plan}"
+            if total > 0:
+                line += f" ({done}/{total} sessioni, {round(pct)}%)"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _fmt_checkins(activities: list) -> str:
     """Ultime 10 sessioni con check-in (RPE o note fisiche)."""
     with_checkin = [
@@ -300,6 +339,7 @@ def _build_system_prompt(
     today_str: str,
     db_history: list[dict] | None = None,
     today_summary: dict | None = None,
+    objectives: list | None = None,
 ) -> str:
     ftp    = profile.get("ftp_watts") or 202
     z1     = profile.get("power_zone_1_max") or 121
@@ -347,7 +387,10 @@ FTP {ftp}W | Zone: Z1 <{z1}W | Z2 {z1}–{z2}W | Z3 {z2}–{z3}W | Z4 {z3}–{z4
 Cadenza target: {cmin}–{cmax} rpm (difficoltà su pendenze >6-7%)
 Peso attuale: {weight_now} kg{macro_line}
 Note mediche: {medical}
-Obiettivi: {coaching}
+Note coaching: {coaching}
+
+━━━ OBIETTIVI ATTIVI ━━━
+{_fmt_objectives(objectives or [])}
 
 ━━━ CARICO SETTIMANALE — ULTIME 4 SETTIMANE ━━━
 {_weekly_loads(activities)}
@@ -418,11 +461,22 @@ def _build_coach_prompt(user_id: str, exclude_session_id: str | None = None) -> 
         print(f"[coach] get_daily_summary failed: {e}", flush=True)
         today_summary = None
 
+    try:
+        obj_res = db.table("v_objective_progress").select(
+            "objective_id,title,description,type,status,target_date,plan_name,"
+            "completion_pct,total_sessions,completed_sessions"
+        ).eq("user_id", user_id).eq("status", "active").order("target_date", nullsfirst=False).execute()
+        objectives = obj_res.data or []
+    except Exception as e:
+        print(f"[coach] objectives fetch failed: {e}", flush=True)
+        objectives = []
+
     return _build_system_prompt(
         profile, activities, health_records, weight_records,
         meals_by_day, health_by_day, today_str,
         db_history=db_history,
         today_summary=today_summary,
+        objectives=objectives,
     )
 
 
