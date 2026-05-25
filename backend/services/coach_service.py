@@ -356,8 +356,11 @@ def _build_system_prompt(
         "Ciclista 53 anni, obiettivo gran fondo e riduzione grasso addominale. "
         "2-3 sessioni/settimana, preferibilmente mattina; lungo nel weekend."
     )
-    weight_now = profile.get("weight_kg") or \
-        next((h.get("weight_kg") for h in health_records if h.get("weight_kg")), "n/d")
+    weight_now = (
+        next((h.get("weight_kg") for h in health_records if h.get("weight_kg")), None)
+        or profile.get("weight_kg")
+        or "n/d"
+    )
 
     macro_line = ""
     if today_summary:
